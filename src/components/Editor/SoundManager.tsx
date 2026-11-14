@@ -1,0 +1,2117 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Volume2,
+  Play,
+  Square,
+  Plus,
+  Trash2,
+  Copy,
+  Save,
+  RotateCcw,
+  Sparkles,
+  Shield,
+  FolderPlus,
+  Sliders,
+  Search,
+  CheckCircle,
+  AlertCircle,
+  Music,
+  Globe,
+  Lock,
+  ChevronDown,
+  X,
+} from 'lucide-react';
+import {
+  GameProject,
+  SoundCategory,
+  SoundDefinition,
+  SynthSoundConfig,
+  UserProfile,
+  InstrumentType,
+  CloudProjectDoc,
+} from '../../types';
+import {
+  DEFAULT_SOUND_LIBRARY,
+  getAudioContext,
+  playSynthWithConfig,
+  previewSoundDefinition,
+  stopAllAudio,
+  onAudioStop,
+  INSTRUMENT_OPTIONS,
+} from '../../utils/audio';
+import {
+  fetchGlobalSoundLibraryFromFirestore,
+  saveGlobalSoundLibraryToFirestore,
+  resetGlobalSoundLibraryInFirestore,
+  getUserProjects,
+  saveProjectToCloud,
+} from '../../lib/firebase';
+import { VoicePanel } from './VoicePanel';
+import { DEFAULT_VOICE } from '../../utils/voicePresets';
+
+interface SoundManagerProps {
+  project: GameProject;
+  updateProject: (fn: (prev: GameProject) => GameProject) => void;
+  currentUser?: UserProfile | null;
+  webAspect?: 'clean' | 'classic';
+}
+
+const CATEGORY_LABELS: Record<SoundCategory | 'all', { label: string; color: string }> = {
+  all: { label: 'Todos los Sonidos', color: 'text-amber-400' },
+  ui: { label: 'Interfaz (UI)', color: 'text-sky-400' },
+  action: { label: 'Acciones & Objetos', color: 'text-amber-400' },
+  movement: { label: 'Movimiento & Pasos', color: 'text-emerald-400' },
+  environment: { label: 'Ambiente & Entorno', color: 'text-teal-400' },
+  magic: { label: 'Magia & Secretos', color: 'text-purple-400' },
+  horror: { label: 'Terror & Monstruos', color: 'text-rose-400' },
+  music: { label: 'Música & Fanfarrias', color: 'text-yellow-400' },
+  custom: { label: 'Personalizados', color: 'text-indigo-400' },
+};
+
+// Quick Synth Templates
+const SYNTH_TEMPLATES: { name: string; config: SynthSoundConfig }[] = [
+  {
+    name: 'Campanada Solemne',
+    config: {
+      oscType: 'sine',
+      instrument: 'bell',
+      startFreq: 261.63,
+      endFreq: 255,
+      rampType: 'exponential',
+      duration: 1.8,
+      volume: 0.35,
+      lfoFreq: 3,
+      lfoGain: 6,
+      filterType: 'lowpass',
+      filterFreq: 800,
+    },
+  },
+  {
+    name: 'Piano Acústico',
+    config: {
+      oscType: 'triangle',
+      instrument: 'piano',
+      startFreq: 440,
+      duration: 0.7,
+      volume: 0.35,
+    },
+  },
+  {
+    name: 'Órgano de Tubos',
+    config: {
+      oscType: 'sine',
+      instrument: 'organ',
+      startFreq: 261.63,
+      duration: 0.9,
+      volume: 0.3,
+    },
+  },
+  {
+    name: 'Cuerdas Orquestales',
+    config: {
+      oscType: 'sawtooth',
+      instrument: 'strings',
+      startFreq: 440,
+      duration: 0.85,
+      volume: 0.3,
+    },
+  },
+  {
+    name: 'Flauta Mística',
+    config: {
+      oscType: 'sine',
+      instrument: 'flute',
+      startFreq: 587.33,
+      duration: 0.6,
+      volume: 0.3,
+    },
+  },
+  {
+    name: 'Láser Retro Arcade',
+    config: {
+      oscType: 'sawtooth',
+      instrument: 'chiptune',
+      startFreq: 1800,
+      endFreq: 120,
+      rampType: 'exponential',
+      duration: 0.22,
+      volume: 0.28,
+    },
+  },
+  {
+    name: 'Moneda 8-Bit',
+    config: {
+      oscType: 'arpeggio',
+      startFreq: 987.77,
+      duration: 0.28,
+      volume: 0.25,
+      arpeggioNotes: [987.77, 1318.51],
+      arpeggioSpeed: 0.08,
+    },
+  },
+  {
+    name: 'Fanfarria Triunfal',
+    config: {
+      oscType: 'arpeggio',
+      startFreq: 523.25,
+      duration: 0.45,
+      volume: 0.3,
+      arpeggioNotes: [523.25, 659.25, 783.99, 1046.5],
+      arpeggioSpeed: 0.09,
+    },
+  },
+  {
+    name: 'Hechizo Mágico',
+    config: {
+      oscType: 'arpeggio',
+      startFreq: 880,
+      duration: 0.45,
+      volume: 0.25,
+      arpeggioNotes: [880, 1108.73, 1318.51, 1760, 2093.0],
+      arpeggioSpeed: 0.06,
+    },
+  },
+  {
+    name: 'Chirrido de Puerta',
+    config: {
+      oscType: 'sawtooth',
+      startFreq: 420,
+      endFreq: 550,
+      rampType: 'linear',
+      duration: 0.54,
+      volume: 0.22,
+      filterType: 'bandpass',
+      filterFreq: 650,
+      filterQ: 2.5,
+    },
+  },
+  {
+    name: 'Disparo / Impacto',
+    config: {
+      oscType: 'noise',
+      startFreq: 3000,
+      endFreq: 150,
+      rampType: 'exponential',
+      duration: 0.38,
+      volume: 0.4,
+      filterType: 'lowpass',
+      filterFreq: 2800,
+    },
+  },
+  {
+    name: 'Trueno Distante',
+    config: {
+      oscType: 'noise',
+      startFreq: 450,
+      endFreq: 80,
+      rampType: 'linear',
+      duration: 1.2,
+      volume: 0.35,
+      filterType: 'lowpass',
+      filterFreq: 420,
+    },
+  },
+  {
+    name: 'Rugido de Monstruo',
+    config: {
+      oscType: 'sawtooth',
+      startFreq: 140,
+      endFreq: 45,
+      rampType: 'exponential',
+      duration: 0.6,
+      volume: 0.3,
+      lfoFreq: 16,
+      lfoGain: 35,
+    },
+  },
+  {
+    name: 'Grito animal',
+    config: {
+      synthesisProfile: 'animal_cry',
+      oscType: 'sine',
+      startFreq: 620,
+      endFreq: 390,
+      rampType: 'linear',
+      duration: 0.95,
+      volume: 0.34,
+    },
+  },
+  {
+    name: 'Pasar Hoja',
+    config: {
+      oscType: 'noise',
+      startFreq: 1200,
+      endFreq: 800,
+      rampType: 'linear',
+      duration: 0.18,
+      volume: 0.18,
+      filterType: 'bandpass',
+      filterFreq: 1200,
+      filterQ: 1.8,
+    },
+  },
+  {
+    name: 'Choque de Espadas',
+    config: {
+      oscType: 'sawtooth',
+      startFreq: 1400,
+      endFreq: 350,
+      rampType: 'exponential',
+      duration: 0.28,
+      volume: 0.3,
+      noiseMix: 0.4,
+      filterType: 'bandpass',
+      filterFreq: 1500,
+      filterQ: 4.0,
+    },
+  },
+];
+
+export const SoundManager: React.FC<SoundManagerProps> = ({
+  project,
+  updateProject,
+  currentUser,
+  webAspect = 'clean',
+}) => {
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'lavozdelosmuertos@gmail.com';
+  const isClean = webAspect === 'clean';
+
+  // Global Library state from Firestore
+  const [globalSounds, setGlobalSounds] = useState<SoundDefinition[]>([...DEFAULT_SOUND_LIBRARY]);
+  const [isLoadingGlobal, setIsLoadingGlobal] = useState(false);
+  const [isSavingGlobal, setIsSavingGlobal] = useState(false);
+  const [showSaveMenu, setShowSaveMenu] = useState(false);
+  const saveMenuRef = useRef<HTMLDivElement>(null);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateTargetDocId, setDuplicateTargetDocId] = useState('');
+  const [duplicateSoundName, setDuplicateSoundName] = useState('');
+
+  // Cierra el menú Guardar con Escape o al pulsar fuera de él
+  useEffect(() => {
+    if (!showSaveMenu) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowSaveMenu(false); };
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const t = e.target as Node;
+      if (saveMenuRef.current && !saveMenuRef.current.contains(t) && !(t as HTMLElement).closest?.('[aria-haspopup="dialog"]')) {
+        setShowSaveMenu(false);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+    };
+  }, [showSaveMenu]);
+  const [globalFeedback, setGlobalFeedback] = useState<string | null>(null);
+
+  // User project naming and cloud projects
+  const [projectNameInput, setProjectNameInput] = useState(project.title || 'Mi Historia de Aventuras');
+  const [userProjectsList, setUserProjectsList] = useState<CloudProjectDoc[]>([]);
+  const [selectedTargetDocId, setSelectedTargetDocId] = useState<string>('');
+
+  useEffect(() => {
+    setProjectNameInput(project.title || 'Mi Historia de Aventuras');
+  }, [project.title]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (currentUser) {
+      getUserProjects(currentUser.uid, currentUser.email, currentUser.role === 'admin')
+        .then((docs) => {
+          if (isMounted) setUserProjectsList(docs);
+        })
+        .catch((e) => console.warn('Error loading user projects:', e));
+    } else {
+      setUserProjectsList([]);
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser]);
+
+  const handleTargetProjectChange = (docId: string) => {
+    setSelectedTargetDocId(docId);
+    if (!docId) {
+      setProjectNameInput(project.title || 'Mi Historia de Aventuras');
+    } else {
+      const found = userProjectsList.find((p) => p.id === docId);
+      if (found) {
+        setProjectNameInput(found.title || found.projectData?.title || 'Mi Proyecto');
+      }
+    }
+  };
+
+  // Filter & Search state
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'global' | 'project' | SoundCategory>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSoundId, setSelectedSoundId] = useState<string>('click');
+
+  // Currently playing sound ID for playback feedback
+  const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
+  const [isPlayingTesting, setIsPlayingTesting] = useState(false);
+
+  // Active sound being edited in the editor panel
+  const [activeSoundForm, setActiveSoundForm] = useState<SoundDefinition | null>(null);
+  const [urlTestingStatus, setUrlTestingStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [urlErrorMessage, setUrlErrorMessage] = useState('');
+
+  // Sincronizar estado cuando se detiene el audio desde cualquier origen y detener al desmontar
+  useEffect(() => {
+    const unsub = onAudioStop(() => {
+      setPlayingSoundId(null);
+      setIsPlayingTesting(false);
+    });
+    return () => {
+      unsub();
+      stopAllAudio();
+    };
+  }, []);
+
+  // Load Global Sound Library from Firestore on mount
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoadingGlobal(true);
+    fetchGlobalSoundLibraryFromFirestore()
+      .then((sounds) => {
+        if (isMounted) {
+          setGlobalSounds(sounds);
+          setIsLoadingGlobal(false);
+        }
+      })
+      .catch((e) => {
+        console.warn('Error loading sound library:', e);
+        if (isMounted) setIsLoadingGlobal(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // User project selection for viewing and library filtering
+  const [selectedProjectDocId, setSelectedProjectDocId] = useState<string>('');
+
+  const activeProjectDoc = selectedProjectDocId
+    ? userProjectsList.find((p) => p.id === selectedProjectDocId)
+    : null;
+  const activeProjectTitle = activeProjectDoc
+    ? activeProjectDoc.title || activeProjectDoc.projectData?.title || 'Proyecto'
+    : (projectNameInput || project.title || 'Mi Proyecto');
+  const activeProjectCustomSounds: SoundDefinition[] = activeProjectDoc
+    ? (activeProjectDoc.projectData?.customSounds || [])
+    : (project.customSounds || []);
+
+  const allMergedSounds: SoundDefinition[] = [
+    ...globalSounds.map((s) => ({ ...s, isGlobal: true })),
+    ...activeProjectCustomSounds.map((cs) => ({ ...cs, isGlobal: false, projectTitle: activeProjectTitle })),
+  ];
+
+  // Select sound and load all its characteristics into the editor on the side
+  const handleSelectSound = (sound: SoundDefinition) => {
+    setSelectedSoundId(sound.id);
+    const soundCopy: SoundDefinition = {
+      ...sound,
+      synthConfig: sound.synthConfig
+        ? {
+            ...sound.synthConfig,
+            voice: sound.synthConfig.voice ? { ...sound.synthConfig.voice } : undefined,
+            arpeggioNotes: sound.synthConfig.arpeggioNotes ? [...sound.synthConfig.arpeggioNotes] : undefined,
+          }
+        : undefined,
+    };
+    setActiveSoundForm(soundCopy);
+    setIsPlayingTesting(false);
+    setUrlTestingStatus('idle');
+    setUrlErrorMessage('');
+  };
+
+  // Select sound on initial load or sound change
+  useEffect(() => {
+    const found = allMergedSounds.find((s) => s.id === selectedSoundId) || allMergedSounds[0];
+    if (found && (!activeSoundForm || activeSoundForm.id !== found.id)) {
+      handleSelectSound(found);
+    }
+  }, [selectedSoundId, selectedProjectDocId, globalSounds.length, activeProjectCustomSounds.length]);
+
+  // Filtered sounds list
+  const filteredSounds = allMergedSounds.filter((sound) => {
+    const matchesSearch =
+      sound.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      sound.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (sound.description && sound.description.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    if (!matchesSearch) return false;
+
+    if (selectedFilter === 'all') return true;
+    if (selectedFilter === 'global') return sound.isGlobal;
+    if (selectedFilter === 'project') return !sound.isGlobal;
+    return sound.category === selectedFilter;
+  });
+
+  // Sound Playback Handler
+  const handlePlaySound = async (sound: SoundDefinition) => {
+    stopAllAudio();
+    try {
+      setPlayingSoundId(sound.id);
+      setIsPlayingTesting(true);
+      await previewSoundDefinition(sound);
+    } catch (e) {
+      console.warn('Playback error:', e);
+    } finally {
+      setPlayingSoundId(null);
+      setIsPlayingTesting(false);
+    }
+  };
+
+  const handleStopPreview = () => {
+    stopAllAudio();
+    setPlayingSoundId(null);
+    setIsPlayingTesting(false);
+  };
+
+  // Sound Testing inside Form
+  const handleTestActiveForm = async () => {
+    if (!activeSoundForm) return;
+    handleStopPreview();
+    try {
+      setIsPlayingTesting(true);
+      if (activeSoundForm.sourceType === 'url' && activeSoundForm.url) {
+        setUrlTestingStatus('testing');
+        setUrlErrorMessage('');
+        await previewSoundDefinition(activeSoundForm);
+        setUrlTestingStatus('success');
+      } else {
+        await previewSoundDefinition(activeSoundForm);
+      }
+    } catch (err: any) {
+      setUrlTestingStatus('error');
+      setUrlErrorMessage(err?.message || 'No se pudo reproducir el sonido.');
+    } finally {
+      setIsPlayingTesting(false);
+    }
+  };
+
+  // Add a brand new project sound
+  const handleCreateNewProjectSound = () => {
+    const randomId = `sonido_${Date.now().toString().slice(-4)}`;
+    const newSound: SoundDefinition = {
+      id: randomId,
+      name: 'Nuevo Efecto de Sonido',
+      description: 'Sonido personalizado creado en el proyecto',
+      category: 'action',
+      sourceType: 'synth',
+      isGlobal: false,
+      synthConfig: {
+        oscType: 'sawtooth',
+        instrument: 'custom',
+        startFreq: 440,
+        endFreq: 220,
+        rampType: 'exponential',
+        duration: 0.25,
+        volume: 0.3,
+      },
+    };
+
+    updateProject((prev) => ({
+      ...prev,
+      customSounds: [...(prev.customSounds || []), newSound],
+    }));
+
+    handleSelectSound(newSound);
+    setSelectedFilter('project');
+  };
+
+  // Duplicate an official library sound into current project for customization
+  const handleDuplicateToProject = (sound: SoundDefinition, overrideTitle?: string) => {
+    const trimmedTitle = (overrideTitle || projectNameInput || activeProjectTitle || 'Mi Proyecto de Aventuras').trim();
+    const copySound: SoundDefinition = {
+      ...sound,
+      id: sound.isGlobal ? `${sound.id}_custom` : `${sound.id}_copia`,
+      name: sound.name.includes('(Personalizado)') ? sound.name : `${sound.name} (Personalizado)`,
+      isGlobal: false,
+      isDefault: false,
+    };
+
+    updateProject((prev) => ({
+      ...prev,
+      title: trimmedTitle,
+      customSounds: [...(prev.customSounds || []).filter((s) => s.id !== copySound.id), copySound],
+    }));
+
+    handleSelectSound(copySound);
+    setSelectedFilter('project');
+    setGlobalFeedback(`Copia del sonido guardada en el proyecto "${trimmedTitle}".`);
+    setTimeout(() => setGlobalFeedback(null), 3500);
+  };
+
+  const handleOpenDuplicateModal = () => {
+    if (!activeSoundForm) return;
+    setDuplicateTargetDocId('');
+    setDuplicateSoundName(`${activeSoundForm.name} (Copia)`);
+    setShowDuplicateModal(true);
+  };
+
+  const handleExecuteDuplicate = async () => {
+    if (!activeSoundForm) return;
+    const targetDocId = duplicateTargetDocId;
+    const cleanName = duplicateSoundName.trim() || activeSoundForm.name;
+    const newId = `sound_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+    const newSound: SoundDefinition = {
+      ...activeSoundForm,
+      id: newId,
+      name: cleanName,
+      isGlobal: false,
+      isDefault: false,
+      projectTitle: targetDocId
+        ? userProjectsList.find((p) => p.id === targetDocId)?.title || 'Proyecto'
+        : (project.title || 'Mi Proyecto'),
+    };
+
+    if (targetDocId && targetDocId !== project.id) {
+      const targetDoc = userProjectsList.find((p) => p.id === targetDocId);
+      if (targetDoc) {
+        try {
+          const existingList = targetDoc.projectData?.customSounds || [];
+          const updatedProjectData: GameProject = {
+            ...(targetDoc.projectData || project),
+            customSounds: [...existingList, newSound],
+          };
+          if (currentUser) {
+            await saveProjectToCloud(
+              targetDoc.id,
+              updatedProjectData,
+              { uid: currentUser.uid, displayName: currentUser.displayName, email: currentUser.email },
+              'preserve'
+            );
+          }
+          setUserProjectsList((prev) =>
+            prev.map((p) => (p.id === targetDoc.id ? { ...p, projectData: updatedProjectData } : p))
+          );
+          setGlobalFeedback(`¡Sonido duplicado con éxito en "${targetDoc.title || 'Proyecto'}"!`);
+        } catch (err) {
+          console.error('Error duplicating sound to cloud project:', err);
+        }
+      }
+    } else {
+      updateProject((prev) => ({
+        ...prev,
+        customSounds: [...(prev.customSounds || []).filter((s) => s.id !== newSound.id), newSound],
+      }));
+      handleSelectSound(newSound);
+      setSelectedFilter('project');
+      setGlobalFeedback(`¡Sonido duplicado con éxito en "${project.title || 'este proyecto'}"!`);
+    }
+
+    setShowDuplicateModal(false);
+    setTimeout(() => setGlobalFeedback(null), 3500);
+  };
+
+  // Save changes to active sound in Project
+  const handleSaveToProject = async () => {
+    if (!activeSoundForm) return;
+    const targetDocId = selectedTargetDocId || selectedProjectDocId;
+    const targetDoc = targetDocId ? userProjectsList.find((p) => p.id === targetDocId) : null;
+    const trimmedTitle = (projectNameInput || targetDoc?.title || targetDoc?.projectData?.title || project.title || 'Mi Proyecto de Aventuras').trim();
+
+    // Un sonido oficial no se sobrescribe: se guarda como copia editable en el proyecto
+    if (activeSoundForm.isGlobal) {
+      handleDuplicateToProject(activeSoundForm, trimmedTitle);
+      return;
+    }
+
+    const updated: SoundDefinition = { ...activeSoundForm, isGlobal: false, projectTitle: trimmedTitle };
+
+    if (targetDocId && targetDoc && targetDoc.id !== project.id) {
+      try {
+        const existingList = targetDoc.projectData?.customSounds || [];
+        const index = existingList.findIndex((s) => s.id === updated.id);
+        const nextList = index >= 0
+          ? existingList.map((s, i) => (i === index ? updated : s))
+          : [...existingList, updated];
+
+        const updatedProjectData: GameProject = {
+          ...(targetDoc.projectData || project),
+          title: trimmedTitle,
+          customSounds: nextList,
+        };
+
+        if (currentUser) {
+          await saveProjectToCloud(
+            targetDoc.id,
+            updatedProjectData,
+            { uid: currentUser.uid, displayName: currentUser.displayName, email: currentUser.email },
+            'preserve'
+          );
+        }
+
+        setUserProjectsList((prev) =>
+          prev.map((p) => (p.id === targetDoc.id ? { ...p, title: trimmedTitle, projectData: updatedProjectData } : p))
+        );
+        handleSelectSound(updated);
+        setGlobalFeedback(`¡Sonido guardado correctamente en "${trimmedTitle}"!`);
+        setTimeout(() => setGlobalFeedback(null), 3500);
+      } catch (err) {
+        console.error('Error saving sound to cloud project:', err);
+      }
+    } else {
+      updateProject((prev) => {
+        const existingList = prev.customSounds || [];
+        const index = existingList.findIndex((s) => s.id === updated.id);
+        let nextList = [...existingList];
+        if (index >= 0) {
+          nextList[index] = updated;
+        } else {
+          nextList.push(updated);
+        }
+        return {
+          ...prev,
+          title: trimmedTitle,
+          customSounds: nextList,
+        };
+      });
+      handleSelectSound(updated);
+      setGlobalFeedback(`¡Sonido guardado correctamente en "${trimmedTitle}"!`);
+      setTimeout(() => setGlobalFeedback(null), 3500);
+    }
+  };
+
+  // Delete sound from Project
+  const handleDeleteFromProject = async (soundId: string) => {
+    const targetDocId = selectedTargetDocId || selectedProjectDocId;
+    const targetDoc = targetDocId ? userProjectsList.find((p) => p.id === targetDocId) : null;
+
+    if (targetDocId && targetDoc && targetDoc.id !== project.id) {
+      try {
+        const nextCustom = (targetDoc.projectData?.customSounds || []).filter((s) => s.id !== soundId);
+        const updatedProjectData: GameProject = {
+          ...(targetDoc.projectData || project),
+          customSounds: nextCustom,
+        };
+        if (currentUser) {
+          await saveProjectToCloud(
+            targetDoc.id,
+            updatedProjectData,
+            { uid: currentUser.uid, displayName: currentUser.displayName, email: currentUser.email },
+            'preserve'
+          );
+        }
+        setUserProjectsList((prev) =>
+          prev.map((p) => (p.id === targetDoc.id ? { ...p, projectData: updatedProjectData } : p))
+        );
+      } catch (e) {
+        console.error('Error deleting sound from cloud project:', e);
+      }
+    } else {
+      updateProject((prev) => {
+        const nextCustom = (prev.customSounds || []).filter((s) => s.id !== soundId);
+        return {
+          ...prev,
+          customSounds: nextCustom,
+        };
+      });
+    }
+
+    const fallback = globalSounds[0];
+    if (fallback) handleSelectSound(fallback);
+    setGlobalFeedback('Sonido eliminado del proyecto.');
+    setTimeout(() => setGlobalFeedback(null), 3000);
+  };
+
+  // ADMIN ACTION: Save sound changes to Global Library (Firestore)
+  const handleAdminSaveToGlobalLibrary = async () => {
+    if (!isAdmin || !activeSoundForm) return;
+
+    setIsSavingGlobal(true);
+    setGlobalFeedback(null);
+    try {
+      const targetSound: SoundDefinition = {
+        ...activeSoundForm,
+        isGlobal: true,
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser?.email || 'Urdimbre',
+      };
+
+      // Update global sounds list
+      const nextGlobalList = globalSounds.map((s) => (s.id === targetSound.id ? targetSound : s));
+      if (!nextGlobalList.some((s) => s.id === targetSound.id)) {
+        nextGlobalList.push(targetSound);
+      }
+
+      await saveGlobalSoundLibraryToFirestore(nextGlobalList, currentUser?.email || 'lavozdelosmuertos@gmail.com');
+      setGlobalSounds(nextGlobalList);
+      setGlobalFeedback('¡Sonido guardado en la Biblioteca Global de la Plataforma para todos los usuarios!');
+    } catch (e: any) {
+      alert('Error al guardar en Firestore: ' + (e?.message || e));
+    } finally {
+      setIsSavingGlobal(false);
+      setTimeout(() => setGlobalFeedback(null), 4000);
+    }
+  };
+
+  // ADMIN ACTION: Reset Global Library to defaults in Firestore
+  const handleAdminResetGlobalLibrary = async () => {
+    if (!isAdmin) return;
+    if (
+      confirm(
+        '¿Restablecer toda la Biblioteca Global a los presets de sintetizador originales de fábrica? Se sincronizará en Firestore.'
+      )
+    ) {
+      setIsSavingGlobal(true);
+      try {
+        await resetGlobalSoundLibraryInFirestore(currentUser?.email || 'lavozdelosmuertos@gmail.com');
+        setGlobalSounds([...DEFAULT_SOUND_LIBRARY]);
+        setGlobalFeedback('¡Biblioteca Global restablecida con éxito a los presets originales!');
+      } catch (e: any) {
+        alert('Error al restablecer: ' + (e?.message || e));
+      } finally {
+        setIsSavingGlobal(false);
+        setTimeout(() => setGlobalFeedback(null), 4000);
+      }
+    }
+  };
+
+  // Apply a quick synth template to the active form
+  const handleApplyTemplate = (template: typeof SYNTH_TEMPLATES[0]) => {
+    if (!activeSoundForm) return;
+    setActiveSoundForm({
+      ...activeSoundForm,
+      sourceType: 'synth',
+      synthConfig: { ...template.config },
+    });
+    // Auto test template sound
+    const ctx = getAudioContext();
+    if (ctx) {
+      playSynthWithConfig(ctx, template.config);
+    }
+  };
+
+  // Cambiar entre motor oscilador/instrumento y motor Voz / Criatura
+  const handleSelectEngine = (engine: 'osc' | 'voice') => {
+    if (!activeSoundForm) return;
+    const curr = activeSoundForm.synthConfig || { oscType: 'sawtooth' as const, startFreq: 440, duration: 1, volume: 0.3 };
+    const isVoice = curr.synthesisProfile === 'voice';
+    if ((engine === 'voice') === isVoice) return;
+    const next: SynthSoundConfig =
+      engine === 'voice'
+        ? {
+            ...curr,
+            synthesisProfile: 'voice',
+            oscType: 'sawtooth',
+            instrument: 'custom',
+            startFreq: Math.min(Math.max(curr.startFreq || 300, 60), 2000),
+            duration: Math.max(curr.duration || 1, 0.8),
+            voice: { ...DEFAULT_VOICE, ...(curr.voice || {}) },
+          }
+        : { ...curr, synthesisProfile: undefined, voice: undefined };
+    setActiveSoundForm({ ...activeSoundForm, synthConfig: next });
+  };
+
+  // Handle instrument change
+  const handleSelectInstrument = (instId: InstrumentType) => {
+    if (!activeSoundForm) return;
+    const option = INSTRUMENT_OPTIONS.find((o) => o.id === instId);
+    const curr = activeSoundForm.synthConfig || {
+      oscType: 'sine',
+      startFreq: 440,
+      duration: 0.4,
+      volume: 0.3,
+    };
+
+    const nextConfig: SynthSoundConfig = {
+      ...curr,
+      synthesisProfile: undefined,
+      voice: undefined,
+      instrument: instId,
+      startFreq: option && instId !== 'custom' ? option.defaultFreq : curr.startFreq,
+      duration: option && instId !== 'custom' ? option.defaultDur : curr.duration,
+    };
+
+    setActiveSoundForm({
+      ...activeSoundForm,
+      synthConfig: nextConfig,
+    });
+
+    const ctx = getAudioContext();
+    if (ctx) {
+      playSynthWithConfig(ctx, nextConfig);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Top Banner / Header */}
+      <div
+        className={`p-5 rounded-2xl border shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all ${
+          isClean ? 'bg-[#FFFDF6] border-[#E5DCB8]' : 'bg-[#2C241C] border-[#42362B]'
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold shadow-inner ${
+              isClean ? 'bg-[#E5DCB8]/60 text-[#A4332A] border border-[#D9CFA9]' : 'bg-amber-500/10 border border-amber-500/30 text-amber-500'
+            }`}
+          >
+            <Volume2 className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className={`font-serif font-bold text-lg ${isClean ? 'text-[#2A2118]' : 'text-[#F4EFE3]'}`}>
+                Gestor de Sonidos y Sintetizador
+              </h3>
+              {isAdmin ? (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1">
+                  <Shield className="w-3 h-3 text-amber-400" />
+                  <span>Modo Administrador (Urdimbre)</span>
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full bg-sky-500/20 border border-sky-500/40 text-sky-300 text-[11px] font-bold flex items-center gap-1">
+                  <span>Modo Creador</span>
+                </span>
+              )}
+            </div>
+            <p className={`text-xs mt-0.5 ${isClean ? 'text-[#6B5C46]' : 'text-[#D1C7B7]'}`}>
+              {isAdmin
+                ? 'Edita y afina las ondas y frecuencias de la biblioteca global, inserta URLs de audio o añade nuevos efectos para toda la plataforma.'
+                : 'Acceso exclusivo a la Biblioteca Oficial y a tu(s) proyecto(s) de autor. Escucha y asigna efectos a tus escenas o personaliza sonidos para tu historia.'}
+            </p>
+          </div>
+        </div>
+
+        {/* Global Admin Tools */}
+        {isAdmin && (
+          <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+            <button
+              type="button"
+              onClick={handleAdminResetGlobalLibrary}
+              disabled={isSavingGlobal}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                isClean
+                  ? 'bg-[#F4EFE3] hover:bg-[#E5DCB8] text-[#6B5C46] border-[#E5DCB8]'
+                  : 'bg-[#1F1913] hover:bg-[#382E25] text-[#D1C7B7] border-[#42362B]'
+              }`}
+              title="Restaurar toda la biblioteca oficial a los presets de síntesis de fábrica"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Restablecer Fábrica</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCreateNewProjectSound}
+              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nuevo Sonido</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Global Feedback Banner */}
+      {globalFeedback && (
+        <div className="p-3 bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn">
+          <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <span>{globalFeedback}</span>
+        </div>
+      )}
+
+      {/* Main Grid: Catalog Sidebar & Audio Studio */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column: Sound Catalog & Categories (5 cols) */}
+        <div className="lg:col-span-5 space-y-4">
+          {/* Filter Bar & Search */}
+          <div
+            className={`p-4 rounded-2xl border shadow-sm space-y-3 ${
+              isClean ? 'bg-[#FFFDF6] border-[#E5DCB8]' : 'bg-[#2C241C] border-[#42362B]'
+            }`}
+          >
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar sonidos por nombre..."
+                className={`w-full pl-9 pr-3 py-2 rounded-xl text-xs border transition-all ${
+                  isClean
+                    ? 'bg-[#F4EFE3] border-[#E5DCB8] text-[#2A2118] focus:border-[#A4332A]'
+                    : 'bg-[#1F1913] border-[#42362B] text-[#F4EFE3] focus:border-amber-500'
+                }`}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Scope Filter Tabs */}
+            <div
+              className={`flex items-center gap-1 p-1 rounded-xl border text-[11px] font-semibold ${
+                isClean ? 'bg-[#F4EFE3] border-[#E5DCB8]' : 'bg-black/20 border-white/5'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setSelectedFilter('all')}
+                className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer ${
+                  selectedFilter === 'all'
+                    ? isClean
+                      ? 'bg-[#A4332A] text-white font-bold shadow-sm'
+                      : 'bg-amber-600 text-white font-bold shadow-sm'
+                    : isClean
+                    ? 'text-[#6B5C46] hover:text-[#2A2118]'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Todos ({allMergedSounds.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedFilter('global')}
+                className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer flex items-center justify-center gap-1 ${
+                  selectedFilter === 'global'
+                    ? isClean
+                      ? 'bg-[#A4332A] text-white font-bold shadow-sm'
+                      : 'bg-amber-600 text-white font-bold shadow-sm'
+                    : isClean
+                    ? 'text-[#6B5C46] hover:text-[#2A2118]'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Shield className="w-3 h-3 text-amber-300" />
+                <span>Oficiales ({globalSounds.length})</span>
+              </button>
+              <div className="flex-1 min-w-0 relative">
+                <select
+                  value={selectedProjectDocId}
+                  onChange={(e) => {
+                    const newDocId = e.target.value;
+                    setSelectedProjectDocId(newDocId);
+                    setSelectedFilter('project');
+                    const targetProj = newDocId ? userProjectsList.find((p) => p.id === newDocId) : null;
+                    const sounds = targetProj ? (targetProj.projectData?.customSounds || []) : (project.customSounds || []);
+                    if (sounds.length > 0) {
+                      handleSelectSound(sounds[0]);
+                    }
+                  }}
+                  onClick={() => {
+                    if (selectedFilter !== 'project') {
+                      setSelectedFilter('project');
+                    }
+                  }}
+                  title="Filtrar por proyecto y ver sus sonidos"
+                  className={`w-full py-1.5 pl-2.5 pr-7 rounded-lg text-[11px] font-bold border transition-all cursor-pointer outline-none truncate appearance-none ${
+                    selectedFilter === 'project'
+                      ? isClean
+                        ? 'bg-[#A4332A] text-white border-[#872820] shadow-sm'
+                        : 'bg-amber-600 text-white border-amber-500 shadow-sm'
+                      : isClean
+                      ? 'bg-[#F4EFE3] text-[#6B5C46] border-[#E5DCB8] hover:text-[#2A2118]'
+                      : 'bg-black/30 text-slate-300 border-white/10 hover:text-white'
+                  }`}
+                >
+                  <option
+                    value=""
+                    className={isClean ? 'bg-[#FFFDF6] text-[#2A2118]' : 'bg-[#1F1913] text-amber-200'}
+                  >
+                    📁 {project.title || 'Proyecto en edición'} ({(project.customSounds || []).length})
+                  </option>
+                  {userProjectsList
+                    .filter((p) => p.id !== project.id && (p.title || p.projectData?.title) !== (project.title || ''))
+                    .map((p) => {
+                      const pTitle = p.title || p.projectData?.title || 'Sin título';
+                      const count = p.projectData?.customSounds?.length || 0;
+                      return (
+                        <option
+                          key={p.id}
+                          value={p.id}
+                          className={isClean ? 'bg-[#FFFDF6] text-[#2A2118]' : 'bg-[#1F1913] text-amber-200'}
+                        >
+                          📁 {pTitle} ({count})
+                        </option>
+                      );
+                    })}
+                </select>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 ${
+                    selectedFilter === 'project'
+                      ? 'text-white'
+                      : isClean
+                      ? 'text-[#6B5C46]'
+                      : 'text-slate-400'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Category Chips */}
+            <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto pb-1">
+              {(['ui', 'action', 'movement', 'environment', 'magic', 'horror', 'music'] as SoundCategory[]).map(
+                (cat) => {
+                  const info = CATEGORY_LABELS[cat];
+                  const isActive = selectedFilter === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setSelectedFilter(isActive ? 'all' : cat)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border flex items-center gap-1 transition-all cursor-pointer ${
+                        isActive
+                          ? isClean
+                            ? 'bg-[#A4332A] text-white border-[#872820] font-bold'
+                            : 'bg-amber-500/30 border-amber-500/60 text-amber-200 font-bold'
+                          : isClean
+                          ? 'bg-[#F4EFE3] border-[#E5DCB8] text-[#6B5C46] hover:text-[#2A2118] hover:bg-[#EBE3CD]'
+                          : 'bg-[#1F1913] border-[#42362B] text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>{info.label.split(' ')[0]}</span>
+                    </button>
+                  );
+                }
+              )}
+            </div>
+          </div>
+
+          {/* Sound List */}
+          <div
+            className={`p-3 rounded-2xl border shadow-sm space-y-2 max-h-[580px] overflow-y-auto ${
+              isClean ? 'bg-[#FFFDF6] border-[#E5DCB8]' : 'bg-[#2C241C] border-[#42362B]'
+            }`}
+          >
+            {filteredSounds.length === 0 ? (
+              <div className="py-8 text-center space-y-2">
+                <Volume2 className="w-8 h-8 mx-auto text-slate-400 opacity-60" />
+                <p className={`text-xs ${isClean ? 'text-[#6B5C46]' : 'text-slate-400'}`}>
+                  No se encontraron sonidos con los filtros seleccionados.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCreateNewProjectSound}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl inline-flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Crear Sonido Personalizado</span>
+                </button>
+              </div>
+            ) : (
+              filteredSounds.map((sound) => {
+                const isSelected = selectedSoundId === sound.id;
+                const isPlaying = playingSoundId === sound.id;
+
+                return (
+                  <div
+                    key={sound.id}
+                    onClick={() => {
+                      handleSelectSound(sound);
+                    }}
+                    className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                      isSelected
+                        ? isClean
+                          ? 'bg-[#EAE0C8] border-[#A4332A]/50 shadow-sm ring-1 ring-[#A4332A]/30'
+                          : 'bg-amber-500/15 border-amber-500/50 shadow-sm ring-1 ring-amber-500/30'
+                        : isClean
+                        ? 'bg-[#F4EFE3] hover:bg-[#E5DCB8]/70 border-[#E5DCB8]'
+                        : 'bg-[#1F1913] hover:bg-[#2A2118] border-[#42362B]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Play / Stop Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePlaySound(sound);
+                        }}
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center text-white transition-all cursor-pointer shadow-sm flex-shrink-0 ${
+                          isPlaying
+                            ? 'bg-emerald-600 scale-105 ring-2 ring-emerald-400 animate-pulse'
+                            : isClean
+                            ? 'bg-[#A4332A] hover:bg-[#872820] hover:scale-105'
+                            : 'bg-amber-600 hover:bg-amber-500 hover:scale-105'
+                        }`}
+                        title="Preescuchar sonido"
+                      >
+                        {isPlaying ? <Square className="w-3.5 h-3.5 fill-white" /> : <Play className="w-4 h-4 fill-white ml-0.5" />}
+                      </button>
+
+                      <div className="min-w-0">
+                        <h4 className={`text-xs font-bold truncate ${isClean ? 'text-[#2A2118]' : 'text-[#F4EFE3]'}`}>
+                          {sound.name}
+                        </h4>
+                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400">
+                          <span className={`font-mono text-[10px] ${isClean ? 'text-[#872820] font-semibold' : 'text-amber-400/90'}`}>
+                            {sound.id}
+                          </span>
+                          <span>•</span>
+                          <span>{sound.sourceType === 'url' ? 'Audio URL' : 'Sintetizador'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {sound.isGlobal ? (
+                        <span
+                          className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-bold flex items-center gap-1"
+                          title="Sonido de la Biblioteca Oficial del Sistema"
+                        >
+                          <Shield className="w-3 h-3 text-amber-400" />
+                          <span className="hidden sm:inline">Oficial</span>
+                        </span>
+                      ) : (
+                        <span
+                          className="px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-[10px] font-bold flex items-center gap-1 max-w-[150px]"
+                          title={`Sonido del proyecto: ${sound.projectTitle || activeProjectTitle}`}
+                        >
+                          <FolderPlus className="w-3 h-3 text-indigo-400 shrink-0" />
+                          <span className="truncate">{sound.projectTitle || activeProjectTitle}</span>
+                        </span>
+                      )}
+
+                      {!sound.isGlobal && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteFromProject(sound.id);
+                          }}
+                          className="p-1 text-rose-500 hover:text-rose-600 hover:bg-rose-500/20 rounded-lg transition-all cursor-pointer"
+                          title="Eliminar sonido de este proyecto"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Quick Create Sound CTA */}
+          <button
+            type="button"
+            onClick={handleCreateNewProjectSound}
+            className={`w-full py-2.5 px-4 border border-dashed rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              isClean
+                ? 'bg-[#FFFDF6] hover:bg-[#E5DCB8] text-[#2A2118] border-[#D9CFA9]'
+                : 'bg-[#2C241C] hover:bg-[#382E25] text-amber-200 border-amber-500/40'
+            }`}
+          >
+            <FolderPlus className="w-4 h-4 text-amber-500" />
+            <span>+ Añadir Nuevo Sonido al Proyecto</span>
+          </button>
+        </div>
+
+        {/* Right Column: Interactive Sound Designer Studio (7 cols) */}
+        <div className="lg:col-span-7">
+          {activeSoundForm ? (
+            <div
+              className={`p-5 rounded-2xl border shadow-sm space-y-6 ${
+                isClean ? 'bg-[#FFFDF6] border-[#E5DCB8]' : 'bg-[#2C241C] border-[#42362B]'
+              }`}
+            >
+              {/* Studio Header & Live Preview Bar */}
+              <div
+                className={`sticky top-[46px] sm:top-[58px] z-20 -mx-1 p-3 sm:p-4 rounded-xl border shadow-md ${
+                  isClean ? 'bg-[#F4EFE3] border-[#E5DCB8]' : 'bg-[#1b150f] border-white/10'
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center font-bold ${
+                        isClean ? 'bg-[#E5DCB8] text-[#A4332A]' : 'bg-amber-500/20 text-amber-400'
+                      }`}
+                    >
+                      <Volume2 className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className={`text-sm font-bold truncate ${isClean ? 'text-[#2A2118]' : 'text-white'}`}>
+                        {activeSoundForm.name}
+                      </h4>
+                      <div className="flex items-center gap-2 text-[11px] font-mono">
+                        <span className={isClean ? 'text-[#872820] font-semibold' : 'text-amber-400'}>
+                          ID: {activeSoundForm.id}
+                        </span>
+                        <span className="text-slate-400">•</span>
+                        <span
+                          className={`px-1.5 py-0.2 rounded text-[10px] font-sans font-bold ${
+                            activeSoundForm.isGlobal
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                          }`}
+                        >
+                          {activeSoundForm.isGlobal
+                            ? 'Oficial (Global)'
+                            : activeSoundForm.projectTitle || activeProjectTitle}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={isPlayingTesting ? handleStopPreview : handleTestActiveForm}
+                      className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 text-white shadow-md transition-all cursor-pointer touch-manipulation ${
+                        isPlayingTesting
+                          ? 'bg-rose-600 hover:bg-rose-500 animate-pulse'
+                          : isClean
+                          ? 'bg-[#A4332A] hover:bg-[#872820]'
+                          : 'bg-gradient-to-r from-amber-600 to-amber-500 hover:brightness-110'
+                      }`}
+                      title={isPlayingTesting ? 'Detener reproducción' : 'Probar sonido'}
+                    >
+                      {isPlayingTesting ? <Square className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white" />}
+                      <span>{isPlayingTesting ? 'Parar' : 'Probar Sonido'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveToProject}
+                      className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 text-white shadow-md transition-all cursor-pointer touch-manipulation ${
+                        isClean ? 'bg-[#2E7D32] hover:bg-[#1B5E20]' : 'bg-emerald-600 hover:bg-emerald-500'
+                      }`}
+                      title="Guardar todos los cambios de este sonido"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>Guardar Cambios</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDuplicateModal()}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-all cursor-pointer ${
+                        isClean
+                          ? 'bg-[#FFFDF6] hover:bg-[#E5DCB8] text-[#2A2118] border-[#E5DCB8]'
+                          : 'bg-white/10 hover:bg-white/20 text-amber-200 border-white/10'
+                      }`}
+                      title="Duplicar este sonido a otro proyecto diferente"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="hidden sm:inline">Duplicar a Proyecto</span>
+                      <span className="sm:hidden">Duplicar</span>
+                    </button>
+
+                    {!activeSoundForm.isGlobal && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFromProject(activeSoundForm.id)}
+                        className="px-2.5 py-2 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+                        title="Eliminar este sonido del proyecto"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Direct Editing Details: Name, Category, Description */}
+                <div
+                  className={`p-3.5 sm:p-4 rounded-xl border space-y-3 ${
+                    isClean ? 'bg-[#FFFDF6] border-[#E5DCB8]' : 'bg-black/30 border-white/10'
+                  }`}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className={`text-xs font-bold block ${isClean ? 'text-[#2A2118]' : 'text-slate-200'}`}>
+                        Nombre del Sonido:
+                      </label>
+                      <input
+                        type="text"
+                        value={activeSoundForm.name}
+                        onChange={(e) => setActiveSoundForm({ ...activeSoundForm, name: e.target.value })}
+                        className={`w-full px-3 py-2 rounded-xl text-xs border font-semibold ${
+                          isClean
+                            ? 'bg-[#F4EFE3] border-[#E5DCB8] text-[#2A2118] focus:border-[#A4332A]'
+                            : 'bg-[#1F1913] border-[#42362B] text-[#F4EFE3] focus:border-amber-500'
+                        }`}
+                        placeholder="Nombre descriptivo del sonido..."
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className={`text-xs font-bold block ${isClean ? 'text-[#2A2118]' : 'text-slate-200'}`}>
+                        Categoría Temática:
+                      </label>
+                      <select
+                        value={activeSoundForm.category}
+                        onChange={(e) =>
+                          setActiveSoundForm({ ...activeSoundForm, category: e.target.value as SoundCategory })
+                        }
+                        className={`w-full px-3 py-2 rounded-xl text-xs border font-semibold ${
+                          isClean
+                            ? 'bg-[#F4EFE3] border-[#E5DCB8] text-[#2A2118] focus:border-[#A4332A]'
+                            : 'bg-[#1F1913] border-[#42362B] text-[#F4EFE3] focus:border-amber-500'
+                        }`}
+                      >
+                        {(['ui', 'action', 'movement', 'environment', 'magic', 'horror', 'music', 'custom'] as SoundCategory[]).map(
+                          (cat) => (
+                            <option key={cat} value={cat}>
+                              {CATEGORY_LABELS[cat]?.label}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className={`text-xs font-bold block ${isClean ? 'text-[#2A2118]' : 'text-slate-200'}`}>
+                      Descripción y Uso:
+                    </label>
+                    <input
+                      type="text"
+                      value={activeSoundForm.description || ''}
+                      onChange={(e) => setActiveSoundForm({ ...activeSoundForm, description: e.target.value })}
+                      placeholder="Ej: Sonido de cerradura al usar la llave dorada..."
+                      className={`w-full px-3 py-2 rounded-xl text-xs border ${
+                        isClean
+                          ? 'bg-[#F4EFE3] border-[#E5DCB8] text-[#2A2118] focus:border-[#A4332A]'
+                          : 'bg-[#1F1913] border-[#42362B] text-[#F4EFE3] focus:border-amber-500'
+                      }`}
+                    />
+                  </div>
+
+                  {activeSoundForm.isGlobal && !isAdmin && (
+                    <p className={`text-[11px] pt-1 flex items-start gap-1.5 ${isClean ? 'text-[#872820]' : 'text-amber-300'}`}>
+                      <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        Este es un sonido oficial predeterminado de la plataforma (solo lectura global). Al pulsar <strong>Guardar Cambios</strong> se guardará automáticamente como copia editable personalizada en tu proyecto.
+                      </span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Motor de síntesis (solo sintetizador) */}
+              {activeSoundForm.sourceType === 'synth' && (
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Motor de síntesis">
+                  {[
+                    { id: 'osc', label: 'Oscilador / Instrumento', desc: 'Pitidos, notas, efectos electrónicos' },
+                    { id: 'voice', label: 'Voz / Criatura', desc: 'Gritos, aullidos, gruñidos, respiración' },
+                  ].map((m) => {
+                    const active = (m.id === 'voice') === (activeSoundForm.synthConfig?.synthesisProfile === 'voice');
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => handleSelectEngine(m.id as 'osc' | 'voice')}
+                        className={`flex-1 min-w-[150px] p-2.5 rounded-xl border text-left transition-all cursor-pointer touch-manipulation ${
+                          active
+                            ? isClean
+                              ? 'bg-[#A4332A] text-white border-[#872820] shadow-sm'
+                              : 'bg-amber-600 text-white border-amber-500 shadow-sm'
+                            : isClean
+                            ? 'bg-[#FFFDF6] border-[#E5DCB8] text-[#2A2118] hover:bg-[#EBE3CD]'
+                            : 'bg-[#2C241C] border-[#42362B] text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        <span className="block text-xs font-bold">{m.label}</span>
+                        <span className={`block text-[10px] mt-0.5 ${active ? 'text-white/80' : isClean ? 'text-[#6B5C46]' : 'text-slate-400'}`}>{m.desc}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Source Type Selector: Synth vs URL */}
+              <div className="space-y-1.5">
+                <label className={`text-xs font-bold block ${isClean ? 'text-[#2A2118]' : 'text-slate-300'}`}>
+                  Tipo de Fuente de Sonido:
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setActiveSoundForm({ ...activeSoundForm, sourceType: 'synth' })}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      activeSoundForm.sourceType === 'synth'
+                        ? isClean
+                          ? 'bg-[#A4332A] text-white border-[#872820] shadow-sm'
+                          : 'bg-amber-600 text-white border-amber-500 shadow-sm'
+                        : isClean
+                        ? 'bg-[#F4EFE3] border-[#E5DCB8] text-[#2A2118] hover:bg-[#EBE3CD]'
+                        : 'bg-[#1F1913] border-[#42362B] text-slate-400 hover:bg-[#2A2118]'
+                    }`}
+                  >
+                    <Sliders className="w-4 h-4" />
+                    <span>Sintetizador Web Audio</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveSoundForm({ ...activeSoundForm, sourceType: 'url' })}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      activeSoundForm.sourceType === 'url'
+                        ? isClean
+                          ? 'bg-[#A4332A] text-white border-[#872820] shadow-sm'
+                          : 'bg-amber-600 text-white border-amber-500 shadow-sm'
+                        : isClean
+                        ? 'bg-[#F4EFE3] border-[#E5DCB8] text-[#2A2118] hover:bg-[#EBE3CD]'
+                        : 'bg-[#1F1913] border-[#42362B] text-slate-400 hover:bg-[#2A2118]'
+                    }`}
+                  >
+                    <Globe className="w-4 h-4" />
+                    <span>Archivo URL (MP3 / WAV / OGG)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* ==================== URL MODE ==================== */}
+              {activeSoundForm.sourceType === 'url' && (
+                <div
+                  className={`p-4 rounded-xl border space-y-4 ${
+                    isClean ? 'bg-[#F4EFE3] border-[#E5DCB8]' : 'bg-[#1F1913] border-[#42362B]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-sky-500" />
+                    <h5 className={`text-xs font-bold uppercase tracking-wide ${isClean ? 'text-[#2A2118]' : 'text-sky-300'}`}>
+                      Configuración de Audio Externo (URL)
+                    </h5>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className={`text-xs font-semibold block ${isClean ? 'text-[#2A2118]' : 'text-slate-300'}`}>
+                      Enlace Directo de Archivo de Audio (MP3, WAV, OGG, M4A):
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="url"
+                        value={activeSoundForm.url || ''}
+                        onChange={(e) => {
+                          setActiveSoundForm({ ...activeSoundForm, url: e.target.value });
+                          setUrlTestingStatus('idle');
+                        }}
+                        placeholder="https://ejemplo.com/audios/efecto_puerta.mp3"
+                        className={`flex-1 px-3 py-2 rounded-xl text-xs border font-mono ${
+                          isClean
+                            ? 'bg-[#FFFDF6] border-[#E5DCB8] text-[#2A2118]'
+                            : 'bg-[#2C241C] border-[#42362B] text-[#F4EFE3]'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={isPlayingTesting ? handleStopPreview : handleTestActiveForm}
+                        disabled={!activeSoundForm.url}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer flex-shrink-0 ${
+                          isPlayingTesting
+                            ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse'
+                            : 'bg-sky-600 hover:bg-sky-500 text-white'
+                        }`}
+                      >
+                        {isPlayingTesting ? <Square className="w-3.5 h-3.5 fill-white" /> : <Play className="w-3.5 h-3.5 fill-white" />}
+                        <span>{isPlayingTesting ? 'Parar Enlace' : 'Probar Enlace'}</span>
+                      </button>
+                    </div>
+
+                    {urlTestingStatus === 'success' && (
+                      <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-bold mt-1">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>¡Enlace de audio verificado y reproducible con éxito!</span>
+                      </div>
+                    )}
+                    {urlTestingStatus === 'error' && (
+                      <div className="flex items-center gap-1.5 text-xs text-rose-600 font-bold mt-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>Error al cargar audio: {urlErrorMessage}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ==================== SYNTHESIZER MODE ==================== */}
+              {activeSoundForm.sourceType === 'synth' && (
+                <div className="space-y-5">
+                  {activeSoundForm.synthConfig?.synthesisProfile === 'voice' && (
+                    <VoicePanel
+                      config={activeSoundForm.synthConfig}
+                      isClean={isClean}
+                      isPlaying={isPlayingTesting}
+                      onChange={(next) => setActiveSoundForm({ ...activeSoundForm, synthConfig: next })}
+                      onChangeAndPlay={(next) => {
+                        setActiveSoundForm({ ...activeSoundForm, synthConfig: next });
+                        const ctx = getAudioContext();
+                        if (ctx) playSynthWithConfig(ctx, next);
+                      }}
+                      onPreview={handleTestActiveForm}
+                      onStop={handleStopPreview}
+                    />
+                  )}
+
+                  {activeSoundForm.synthConfig?.synthesisProfile !== 'voice' && (
+                  <>
+                  {/* Instrument Selector */}
+                  <div
+                    className={`p-4 rounded-2xl border space-y-3 ${
+                      isClean ? 'bg-[#F4EFE3] border-[#E5DCB8]' : 'bg-[#1F1913] border-[#42362B]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <label className={`text-xs font-bold flex items-center gap-1.5 ${isClean ? 'text-[#2A2118]' : 'text-amber-300'}`}>
+                        <Music className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Selector de Instrumento y Timbre Acústico:</span>
+                      </label>
+                      <span className={`text-[10px] ${isClean ? 'text-[#6B5C46]' : 'text-slate-400'}`}>
+                        (Modelado físico y síntesis armónica)
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                      {INSTRUMENT_OPTIONS.map((inst) => {
+                        const isCurrent =
+                          (activeSoundForm.synthConfig?.instrument || 'custom') === inst.id;
+                        return (
+                          <button
+                            key={inst.id}
+                            type="button"
+                            onClick={() => handleSelectInstrument(inst.id)}
+                            className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                              isCurrent
+                                ? isClean
+                                  ? 'bg-[#A4332A] text-white border-[#872820] shadow-sm'
+                                  : 'bg-amber-600 text-white border-amber-500 shadow-sm'
+                                : isClean
+                                ? 'bg-[#FFFDF6] border-[#E5DCB8] text-[#2A2118] hover:bg-[#EBE3CD]'
+                                : 'bg-[#2C241C] border-[#42362B] text-slate-300 hover:text-white'
+                            }`}
+                          >
+                            <span className="block text-xs font-bold truncate">{inst.name}</span>
+                            <span
+                              className={`block text-[10px] mt-0.5 line-clamp-1 ${
+                                isCurrent ? 'text-white/80' : isClean ? 'text-[#6B5C46]' : 'text-slate-400'
+                              }`}
+                            >
+                              {inst.description}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Synth Quick Templates */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className={`text-xs font-bold flex items-center gap-1.5 ${isClean ? 'text-[#2A2118]' : 'text-amber-300'}`}>
+                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Plantillas de Efectos Rápidos:</span>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {SYNTH_TEMPLATES.map((tmpl) => (
+                        <button
+                          key={tmpl.name}
+                          type="button"
+                          onClick={() => handleApplyTemplate(tmpl)}
+                          className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                            isClean
+                              ? 'bg-[#F4EFE3] hover:bg-[#E5DCB8] text-[#2A2118] border-[#E5DCB8]'
+                              : 'bg-[#1F1913] hover:bg-[#2A2118] text-slate-300 border-[#42362B]'
+                          }`}
+                        >
+                          <span>{tmpl.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Synth Parameters Panel */}
+                  <div
+                    className={`p-4 rounded-2xl border space-y-4 ${
+                      isClean ? 'bg-[#F4EFE3] border-[#E5DCB8]' : 'bg-[#1F1913] border-[#42362B]'
+                    }`}
+                  >
+                    {/* Oscillator Waveform */}
+                    <div className="space-y-1.5">
+                      <label className={`text-xs font-bold block ${isClean ? 'text-[#2A2118]' : 'text-slate-300'}`}>
+                        Forma de Onda del Oscilador:
+                      </label>
+                      <div className="flex items-center justify-end gap-1.5 mb-2">
+                        <button
+                          type="button"
+                          onClick={isPlayingTesting ? handleStopPreview : handleTestActiveForm}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all ${
+                            isPlayingTesting
+                              ? 'bg-rose-600 text-white animate-pulse'
+                              : isClean
+                              ? 'bg-[#A4332A] text-white hover:bg-[#872820]'
+                              : 'bg-amber-600 text-black hover:bg-amber-500'
+                          }`}
+                        >
+                          {isPlayingTesting ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
+                          <span>{isPlayingTesting ? 'Parar' : 'Escuchar cambios'}</span>
+                        </button>
+                        <button type="button" onClick={handleStopPreview} className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all ${isClean ? 'bg-[#E5DCB8] text-[#2A2118] hover:bg-[#D9CFA9]' : 'bg-white/10 text-slate-200 hover:bg-white/20'}`}><Square className="w-3 h-3 fill-current" /> Parar</button>
+                      </div>
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                        {[
+                          { id: 'sine', label: 'Senoidal' },
+                          { id: 'triangle', label: 'Triangular' },
+                          { id: 'square', label: 'Cuadrada' },
+                          { id: 'sawtooth', label: 'Diente Sierra' },
+                          { id: 'noise', label: 'Ruido Blanco' },
+                          { id: 'arpeggio', label: 'Arpegio' },
+                        ].map((w) => (
+                          <button
+                            key={w.id}
+                            type="button"
+                            onClick={() => {
+                              const curr = activeSoundForm.synthConfig || {
+                                oscType: 'sine',
+                                startFreq: 440,
+                                duration: 0.3,
+                                volume: 0.3,
+                              };
+                              setActiveSoundForm({
+                                ...activeSoundForm,
+                                synthConfig: { ...curr, oscType: w.id as any },
+                              });
+                            }}
+                            className={`py-2 px-1.5 rounded-xl border text-[11px] font-bold text-center transition-all cursor-pointer ${
+                              activeSoundForm.synthConfig?.oscType === w.id
+                                ? isClean
+                                  ? 'bg-[#A4332A] text-white border-[#872820] shadow-sm font-black'
+                                  : 'bg-amber-500 text-black border-amber-400 shadow-sm font-black'
+                                : isClean
+                                ? 'bg-[#FFFDF6] border-[#E5DCB8] text-[#2A2118] hover:bg-[#EBE3CD]'
+                                : 'bg-[#2C241C] border-[#42362B] text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            <span className="truncate block">{w.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Frequency & Pitch Sliders */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Start Frequency */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs font-bold">
+                          <span className={isClean ? 'text-[#2A2118]' : 'text-slate-300'}>Frecuencia Inicial:</span>
+                          <span className={`font-mono ${isClean ? 'text-[#872820]' : 'text-amber-400'}`}>
+                            {activeSoundForm.synthConfig?.startFreq || 440} Hz
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="40"
+                          max="3000"
+                          step="10"
+                          value={activeSoundForm.synthConfig?.startFreq || 440}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setActiveSoundForm({
+                              ...activeSoundForm,
+                              synthConfig: { ...(activeSoundForm.synthConfig as any), startFreq: val },
+                            });
+                          }}
+                          className="w-full accent-amber-600"
+                        />
+                      </div>
+
+                      {/* End Frequency (Pitch Ramp) */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs font-bold">
+                          <span className={isClean ? 'text-[#2A2118]' : 'text-slate-300'}>Frecuencia Final (Pitch ramp):</span>
+                          <span className={`font-mono ${isClean ? 'text-[#872820]' : 'text-amber-400'}`}>
+                            {activeSoundForm.synthConfig?.endFreq || activeSoundForm.synthConfig?.startFreq || 440} Hz
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="20"
+                          max="3000"
+                          step="10"
+                          value={activeSoundForm.synthConfig?.endFreq || activeSoundForm.synthConfig?.startFreq || 440}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setActiveSoundForm({
+                              ...activeSoundForm,
+                              synthConfig: { ...(activeSoundForm.synthConfig as any), endFreq: val },
+                            });
+                          }}
+                          className="w-full accent-amber-600"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Duration and Volume */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Duration */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs font-bold">
+                          <span className={isClean ? 'text-[#2A2118]' : 'text-slate-300'}>Duración:</span>
+                          <span className={`font-mono ${isClean ? 'text-[#872820]' : 'text-amber-400'}`}>
+                            {(activeSoundForm.synthConfig?.duration || 0.3).toFixed(2)} seg
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.05"
+                          max="3.0"
+                          step="0.02"
+                          value={activeSoundForm.synthConfig?.duration || 0.3}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setActiveSoundForm({
+                              ...activeSoundForm,
+                              synthConfig: { ...(activeSoundForm.synthConfig as any), duration: val },
+                            });
+                          }}
+                          className="w-full accent-amber-600"
+                        />
+                      </div>
+
+                      {/* Volume */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs font-bold">
+                          <span className={isClean ? 'text-[#2A2118]' : 'text-slate-300'}>Volumen:</span>
+                          <span className={`font-mono ${isClean ? 'text-[#872820]' : 'text-amber-400'}`}>
+                            {Math.round((activeSoundForm.synthConfig?.volume || 0.3) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.05"
+                          max="1.0"
+                          step="0.05"
+                          value={activeSoundForm.synthConfig?.volume || 0.3}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setActiveSoundForm({
+                              ...activeSoundForm,
+                              synthConfig: { ...(activeSoundForm.synthConfig as any), volume: val },
+                            });
+                          }}
+                          className="w-full accent-amber-600"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Filter & LFO Modulation */}
+                    <div
+                      className={`grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t ${
+                        isClean ? 'border-[#E5DCB8]' : 'border-white/10'
+                      }`}
+                    >
+                      {/* Filter Type */}
+                      <div className="space-y-1">
+                        <label className={`text-xs font-bold block ${isClean ? 'text-[#2A2118]' : 'text-slate-300'}`}>
+                          Filtro Acústico:
+                        </label>
+                        <select
+                          value={activeSoundForm.synthConfig?.filterType || 'none'}
+                          onChange={(e) => {
+                            setActiveSoundForm({
+                              ...activeSoundForm,
+                              synthConfig: {
+                                ...(activeSoundForm.synthConfig as any),
+                                filterType: e.target.value as any,
+                              },
+                            });
+                          }}
+                          className={`w-full px-3 py-1.5 rounded-xl text-xs border ${
+                            isClean
+                              ? 'bg-[#FFFDF6] border-[#E5DCB8] text-[#2A2118]'
+                              : 'bg-[#2C241C] border-[#42362B] text-[#F4EFE3]'
+                          }`}
+                        >
+                          <option value="none">Sin Filtro</option>
+                          <option value="lowpass">Paso Bajo (Lowpass - Apagar agudos)</option>
+                          <option value="highpass">Paso Alto (Highpass - Quitar graves)</option>
+                          <option value="bandpass">Paso Banda (Bandpass - Resonante)</option>
+                        </select>
+                      </div>
+
+                      {/* LFO Modulation Rate */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs font-bold">
+                          <span className={isClean ? 'text-[#2A2118]' : 'text-slate-300'}>Modulación LFO (Vibrato):</span>
+                          <span className={`font-mono ${isClean ? 'text-[#872820]' : 'text-amber-400'}`}>
+                            {activeSoundForm.synthConfig?.lfoFreq || 0} Hz
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="30"
+                          step="1"
+                          value={activeSoundForm.synthConfig?.lfoFreq || 0}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setActiveSoundForm({
+                              ...activeSoundForm,
+                              synthConfig: {
+                                ...(activeSoundForm.synthConfig as any),
+                                lfoFreq: val,
+                                lfoGain: val > 0 ? (activeSoundForm.synthConfig?.lfoGain || 25) : 0,
+                              },
+                            });
+                          }}
+                          className="w-full accent-amber-600"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Sin decaimiento */}
+                    <label className={`flex items-start gap-2 text-xs font-bold cursor-pointer ${isClean ? 'text-[#2A2118]' : 'text-slate-300'}`}>
+                      <input
+                        type="checkbox"
+                        checked={!!activeSoundForm.synthConfig?.sustain}
+                        onChange={(e) =>
+                          setActiveSoundForm({
+                            ...activeSoundForm,
+                            synthConfig: { ...(activeSoundForm.synthConfig as SynthSoundConfig), sustain: e.target.checked },
+                          })
+                        }
+                        className="mt-0.5 w-4 h-4 accent-amber-600"
+                      />
+                      <span>
+                        Sin decaimiento (volumen constante)
+                        <span className={`block text-[10px] font-normal ${isClean ? 'text-[#6B5C46]' : 'text-slate-400'}`}>
+                          Mantiene la misma fuerza hasta el final. Actúa en ondas básicas, ruido y modo personalizado; los instrumentos de percusión o pulsados conservan su caída natural.
+                        </span>
+                      </span>
+                    </label>
+
+                    {/* Arpeggio Notes Editor (if arpeggio selected) */}
+                    {activeSoundForm.synthConfig?.oscType === 'arpeggio' && (
+                      <div
+                        className={`space-y-2 p-3 rounded-xl border ${
+                          isClean ? 'bg-[#FFFDF6] border-[#E5DCB8]' : 'bg-black/20 border-white/10'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <label className={`text-xs font-bold ${isClean ? 'text-[#2A2118]' : 'text-amber-300'}`}>
+                            Notas del Arpegio (Frecuencias Hz):
+                          </label>
+                          <span className={`text-[10px] ${isClean ? 'text-[#6B5C46]' : 'text-slate-400'}`}>
+                            Velocidad: {(activeSoundForm.synthConfig.arpeggioSpeed || 0.08).toFixed(2)}s/nota
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {(activeSoundForm.synthConfig.arpeggioNotes || [523.25, 659.25, 783.99, 1046.5]).map(
+                            (noteFreq, idx) => (
+                              <div
+                                key={idx}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 border ${
+                                  isClean
+                                    ? 'bg-[#E5DCB8] border-[#D9CFA9] text-[#2A2118]'
+                                    : 'bg-amber-500/20 border-amber-500/40 text-amber-200'
+                                }`}
+                              >
+                                <span>{Math.round(noteFreq)} Hz</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextNotes = (activeSoundForm.synthConfig?.arpeggioNotes || []).filter(
+                                      (_, i) => i !== idx
+                                    );
+                                    setActiveSoundForm({
+                                      ...activeSoundForm,
+                                      synthConfig: {
+                                        ...(activeSoundForm.synthConfig as any),
+                                        arpeggioNotes: nextNotes,
+                                      },
+                                    });
+                                  }}
+                                  className="text-rose-600 hover:text-rose-700 font-black ml-1 cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            )
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                          <span className={`text-[11px] ${isClean ? 'text-[#6B5C46]' : 'text-slate-400'}`}>
+                            Añadir nota musical:
+                          </span>
+                          {[
+                            { name: 'Do (C4)', hz: 261.63 },
+                            { name: 'Mi (E4)', hz: 329.63 },
+                            { name: 'Sol (G4)', hz: 392.0 },
+                            { name: 'Do (C5)', hz: 523.25 },
+                            { name: 'Mi (E5)', hz: 659.25 },
+                            { name: 'Sol (G5)', hz: 783.99 },
+                            { name: 'Do (C6)', hz: 1046.5 },
+                          ].map((n) => (
+                            <button
+                              key={n.name}
+                              type="button"
+                              onClick={() => {
+                                const currentNotes = activeSoundForm.synthConfig?.arpeggioNotes || [];
+                                setActiveSoundForm({
+                                  ...activeSoundForm,
+                                  synthConfig: {
+                                    ...(activeSoundForm.synthConfig as any),
+                                    arpeggioNotes: [...currentNotes, n.hz],
+                                  },
+                                });
+                              }}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                isClean
+                                  ? 'bg-[#E5DCB8] hover:bg-[#A4332A] hover:text-white text-[#2A2118]'
+                                  : 'bg-white/10 hover:bg-amber-500 hover:text-black text-slate-300'
+                              }`}
+                            >
+                              + {n.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  </>
+                  )}
+                </div>
+              )}
+
+              {/* Action Buttons & Permissions */}
+              <div className={`pt-4 border-t space-y-3 ${isClean ? 'border-[#E5DCB8]' : 'border-white/10'}`}>
+                {/* Solo administradores: guardar en la biblioteca global (separado a propósito del menú Guardar) */}
+                {isAdmin && (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleAdminSaveToGlobalLibrary}
+                      disabled={isSavingGlobal}
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition-all cursor-pointer disabled:opacity-60"
+                      title="Guardar y propagar cambios a toda la plataforma en Firestore"
+                    >
+                      <Shield className="w-4 h-4" />
+                      <span>{isSavingGlobal ? 'Guardando en Firestore...' : 'Guardar en Biblioteca Global'}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="p-12 text-center border rounded-2xl space-y-3 bg-black/10">
+              <Volume2 className="w-12 h-12 mx-auto text-slate-400 opacity-50" />
+              <h4 className={`text-sm font-bold ${isClean ? 'text-[#2A2118]' : 'text-slate-300'}`}>
+                Selecciona un sonido del catálogo
+              </h4>
+              <p className={`text-xs ${isClean ? 'text-[#6B5C46]' : 'text-slate-400'}`}>
+                Selecciona cualquier sonido a la izquierda para escuchar su onda sintetizada o ajustar sus parámetros.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal Duplicar a otro Proyecto */}
+      {showDuplicateModal && activeSoundForm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+        >
+          <div
+            className={`w-full max-w-md p-5 rounded-2xl border shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+              isClean ? 'bg-[#FFFDF6] border-[#E5DCB8]' : 'bg-[#241C14] border-[#42362B]'
+            }`}
+          >
+            <div className="flex items-center justify-between border-b pb-3 border-amber-500/20">
+              <div className="flex items-center gap-2">
+                <Copy className="w-4 h-4 text-amber-500" />
+                <h4 className={`text-sm font-bold ${isClean ? 'text-[#2A2118]' : 'text-white'}`}>
+                  Duplicar sonido a otro proyecto
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDuplicateModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg text-sm cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className={`text-xs font-bold block ${isClean ? 'text-[#2A2118]' : 'text-slate-300'}`}>
+                  Proyecto de destino:
+                </label>
+                <select
+                  value={duplicateTargetDocId}
+                  onChange={(e) => setDuplicateTargetDocId(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-xl text-xs border font-semibold cursor-pointer ${
+                    isClean
+                      ? 'bg-[#F4EFE3] border-[#E5DCB8] text-[#2A2118] focus:border-[#A4332A]'
+                      : 'bg-[#1F1913] border-[#42362B] text-amber-200 focus:border-amber-500'
+                  }`}
+                >
+                  <option value="">{project.title || 'Proyecto actual en edición'}</option>
+                  {userProjectsList.map((p) => {
+                    const pTitle = p.title || p.projectData?.title || 'Sin título';
+                    if (p.id === project.id || pTitle === (project.title || '')) return null;
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {pTitle}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className={`text-xs font-bold block ${isClean ? 'text-[#2A2118]' : 'text-slate-300'}`}>
+                  Nombre en el proyecto de destino:
+                </label>
+                <input
+                  type="text"
+                  value={duplicateSoundName}
+                  onChange={(e) => setDuplicateSoundName(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-xl text-xs border font-semibold ${
+                    isClean
+                      ? 'bg-[#F4EFE3] border-[#E5DCB8] text-[#2A2118] focus:border-[#A4332A]'
+                      : 'bg-[#1F1913] border-[#42362B] text-[#F4EFE3] focus:border-amber-500'
+                  }`}
+                  placeholder="Nombre del sonido duplicado..."
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-500/10">
+              <button
+                type="button"
+                onClick={() => setShowDuplicateModal(false)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                  isClean ? 'border-[#E5DCB8] text-[#6B5C46] hover:bg-[#EBE3CD]' : 'border-white/10 text-slate-300 hover:bg-white/10'
+                }`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteDuplicate}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Duplicar Sonido</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

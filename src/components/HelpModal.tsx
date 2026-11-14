@@ -1,0 +1,139 @@
+import React from 'react';
+import { HelpCircle, X, MousePointer, BookOpen, Download } from 'lucide-react';
+import { UserProfile } from '../types';
+
+interface HelpModalProps {
+  onClose: () => void;
+  currentUser?: UserProfile | null;
+  currentView?: string;
+  webAspect?: 'clean' | 'classic';
+}
+
+export const HelpModal: React.FC<HelpModalProps> = ({ onClose, currentUser, currentView, webAspect = 'clean' }) => {
+  const isRegisteredInEditor = !!currentUser && currentView === 'edit';
+  const isClean = webAspect === 'clean';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
+      onClick={onClose}
+    >
+      <div
+        className={`border rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden cursor-default transition-colors ${
+          isClean ? 'bg-white border-slate-200 text-slate-800' : 'bg-[#0f0f12] border-white/10 text-white/80'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        
+        {/* Header */}
+        <div className={`px-6 py-4 border-b flex items-center justify-between ${
+          isClean ? 'bg-slate-100 border-slate-200' : 'bg-black/40 border-white/10'
+        }`}>
+          <div className="flex items-center gap-2">
+            <HelpCircle className="w-5 h-5 text-amber-500" />
+            <h3 className={`font-medium text-lg ${isClean ? 'text-slate-900' : 'text-white'}`}>
+              Instrucciones y Preguntas Frecuentes
+            </h3>
+          </div>
+          <button onClick={onClose} className={`p-1.5 transition-colors cursor-pointer ${
+            isClean ? 'text-slate-400 hover:text-slate-800' : 'text-white/40 hover:text-white'
+          }`}>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className={`p-6 overflow-y-auto space-y-6 text-sm leading-relaxed ${
+          isClean ? 'text-slate-700' : 'text-white/80'
+        }`}>
+          
+          {/* Section 1: Cómo Jugar (Pública para todos) */}
+          <div className="space-y-3">
+            <h4 className={`font-medium text-base flex items-center gap-2 ${
+              isClean ? 'text-amber-800' : 'text-amber-300'
+            }`}>
+              <MousePointer className="w-5 h-5 text-amber-500" />
+              <span>Instrucciones de Juego</span>
+            </h4>
+
+            <ul className={`space-y-3 text-xs p-4 rounded-xl border ${
+              isClean ? 'bg-slate-50 border-slate-200 text-slate-700' : 'bg-black/50 border-white/10'
+            }`}>
+              <li className="flex items-start gap-2 leading-relaxed">
+                <span className="text-amber-500 font-bold">•</span>
+                <span>
+                  <strong>Exploración en el texto:</strong> Lee la narración de la escena y decide qué hacer. En el modo fácil, las palabras destacadas en amarillo con fondo translúcido son interactivas. En los modos Normal y Difícil, no se dan pistas sobre qué palabras son interactivas y en el modo difícil se mantienen sin cambios incluso después de interactuar con ellas.
+                </span>
+              </li>
+              <li className="flex items-start gap-2 leading-relaxed">
+                <span className="text-amber-500 font-bold">•</span>
+                <span>
+                  <strong>Seleccionar acciones (Verbos):</strong> Pulsa un verbo de la barra inferior (Mirar, Usar, Abrir, Coger, Hablar, etc.) y luego pulsa en una palabra interactiva del texto.
+                </span>
+              </li>
+              <li className="flex items-start gap-2 leading-relaxed">
+                <span className="text-amber-500 font-bold">•</span>
+                <span>
+                  <strong>Menú rápido al hacer clic:</strong> También puedes hacer clic directamente sobre cualquier palabra interactiva para abrir un menú contextual con las acciones disponibles.
+                </span>
+              </li>
+              <li className="flex items-start gap-2 leading-relaxed">
+                <span className="text-amber-500 font-bold">•</span>
+                <span>
+                  <strong>Uso de Inventario:</strong> Si encuentras u obtienes objetos (como llaves o linternas), pulsa sobre el objeto en tu panel de Inventario y luego selecciona la palabra donde deseas usarlo.
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          {/* Section 2: Editor (Solo para usuarios registrados que accedan al modo Editor) */}
+          {isRegisteredInEditor && (
+            <>
+              <div className={`space-y-3 pt-2 border-t ${isClean ? 'border-slate-200' : 'border-white/10'}`}>
+                <h4 className={`font-medium text-base flex items-center gap-2 ${
+                  isClean ? 'text-amber-800' : 'text-amber-300'
+                }`}>
+                  <BookOpen className="w-5 h-5 text-amber-500" />
+                  <span>Instrucciones del Editor de Aventuras</span>
+                </h4>
+
+                <ol className={`space-y-2 text-xs p-4 rounded-xl border list-decimal list-inside leading-relaxed ${
+                  isClean ? 'bg-slate-50 border-slate-200 text-slate-700' : 'bg-black/50 border-white/10'
+                }`}>
+                  <li>
+                    <strong>Crea Escenas:</strong> Redacta la historia en párrafos narrativos.
+                  </li>
+                  <li>
+                    <strong>Marca Palabras Clave:</strong> Resalta cualquier palabra con el ratón dentro del texto y pulsa el botón <em>"Convertir en Palabra Clave"</em>.
+                  </li>
+                  <li>
+                    <strong>Configura Acciones y Respuestas:</strong> Define qué ocurre cuando el jugador elige <em>Mirar</em>, <em>Usar</em>, <em>Abrir</em> o <em>Coger</em> sobre esa palabra.
+                  </li>
+                  <li>
+                    <strong>Agrega Consecuencias:</strong> Puedes hacer que una acción entregue un objeto al inventario, active una bandera (por ejemplo <code className={isClean ? 'text-amber-700 font-bold' : 'text-amber-300'}>luz_encendida</code>), añada párrafos extra o envíe al jugador a otra escena.
+                  </li>
+                </ol>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className={`font-medium text-base flex items-center gap-2 ${
+                  isClean ? 'text-amber-800' : 'text-amber-300'
+                }`}>
+                  <Download className="w-5 h-5 text-amber-500" />
+                  <span>Exportación HTML / ZIP</span>
+                </h4>
+                <p className={`text-xs leading-relaxed p-3 rounded-xl border ${
+                  isClean ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-black/50 border-white/10 text-white/60'
+                }`}>
+                  Pulsa en <strong>"Exportar HTML"</strong> o <strong>"ZIP"</strong> para generar un juego ejecutable autónomo. Este archivo contiene todo el motor de juego e imágenes y se puede jugar offline en cualquier navegador web sin necesidad de servidor.
+                </p>
+              </div>
+            </>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+};
+

@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profile",
+      "description": "User accounts, profiles and role management",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "author"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "projects": {
+      "title": "Game Project",
+      "description": "Interactive text adventure game projects, drafts and published stories",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "pending_review", "published", "rejected"] },
+        "projectData": { "type": "object" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "publishedAt": { "type": "string" },
+        "reviewFeedback": { "type": "string" },
+        "ratingAverage": { "type": "number" },
+        "ratingCount": { "type": "number" },
+        "ratingTotal": { "type": "number" }
+      },
+      "required": ["title", "authorId", "status", "projectData"]
+    },
+    "story_ratings": {
+      "title": "Story Rating",
+      "description": "User ratings and 1-5 star reviews submitted at the good ending of stories",
+      "type": "object",
+      "properties": {
+        "storyId": { "type": "string" },
+        "rating": { "type": "number", "minimum": 1, "maximum": 5 },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["storyId", "rating"]
+    },
+    "global_settings": {
+      "title": "Global System Settings & Sound Library",
+      "description": "Global application configuration and shared official sound presets",
+      "type": "object",
+      "properties": {
+        "sounds": { "type": "array" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      }
+    }
+  }
+}
