@@ -1,17 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { GameProject, EngineTheme, UserProfile } from './types';
 import { sampleGameProject } from './data/sampleGame';
 import { Navbar, AppView } from './components/Navbar';
-import { GamePlayer } from './components/GamePlayer';
-import { GameEditor } from './components/Editor/GameEditor';
 import { SaveLoadModal } from './components/SaveLoadModal';
 import { ExportModal } from './components/ExportModal';
 import { HelpModal } from './components/HelpModal';
 import { NewProjectModal } from './components/NewProjectModal';
 import { PublicCatalog } from './components/Portal/PublicCatalog';
-import { ProjectWorkspace } from './components/Portal/ProjectWorkspace';
-import { AdminReviewPanel } from './components/Portal/AdminReviewPanel';
 import { AuthModal } from './components/Portal/AuthModal';
+
+const GamePlayer = lazy(() =>
+  import('./components/GamePlayer').then((m) => ({ default: m.GamePlayer }))
+);
+const GameEditor = lazy(() =>
+  import('./components/Editor/GameEditor').then((m) => ({ default: m.GameEditor }))
+);
+const ProjectWorkspace = lazy(() =>
+  import('./components/Portal/ProjectWorkspace').then((m) => ({ default: m.ProjectWorkspace }))
+);
+const AdminReviewPanel = lazy(() =>
+  import('./components/Portal/AdminReviewPanel').then((m) => ({ default: m.AdminReviewPanel }))
+);
 import { UserProfilePage } from './components/Portal/UserProfilePage';
 import { PrivacyPolicyModal } from './components/Portal/PrivacyPolicyModal';
 import { PrivacyBanner } from './components/Portal/PrivacyBanner';
@@ -444,6 +453,13 @@ export default function App() {
 
       {/* Main View Router */}
       <main className="flex-1 flex flex-col min-h-0">
+        <Suspense
+          fallback={
+            <div className="flex-1 flex items-center justify-center p-12 text-xs font-semibold opacity-70">
+              Cargando módulo...
+            </div>
+          }
+        >
         {currentView === 'catalog' && (
           <PublicCatalog
             currentUser={currentUser}
@@ -578,6 +594,7 @@ export default function App() {
             webAspect={webAspect}
           />
         )}
+        </Suspense>
       </main>
 
       {!isHeaderCollapsed && (

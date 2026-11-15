@@ -1,12 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { GameProject, UserProfile } from '../../types';
-import { GeneralSettings } from './GeneralSettings';
 import { SceneEditor } from './SceneEditor';
-import { InventoryManager } from './InventoryManager';
-import { FlagsManager } from './FlagsManager';
-import { CharacterManager } from './CharacterManager';
-import { SoundManager } from './SoundManager';
 import { FileText, Settings, Package, ToggleLeft, AlertTriangle, MoveHorizontal, User, Volume2 } from 'lucide-react';
+
+const GeneralSettings = lazy(() =>
+  import('./GeneralSettings').then((m) => ({ default: m.GeneralSettings }))
+);
+const InventoryManager = lazy(() =>
+  import('./InventoryManager').then((m) => ({ default: m.InventoryManager }))
+);
+const FlagsManager = lazy(() =>
+  import('./FlagsManager').then((m) => ({ default: m.FlagsManager }))
+);
+const CharacterManager = lazy(() =>
+  import('./CharacterManager').then((m) => ({ default: m.CharacterManager }))
+);
+const SoundManager = lazy(() =>
+  import('./SoundManager').then((m) => ({ default: m.SoundManager }))
+);
 import { validateProjectScenes } from '../../utils/sceneValidator';
 import { stopAllAudio } from '../../utils/audio';
 
@@ -222,24 +233,32 @@ export const GameEditor: React.FC<GameEditorProps> = ({
         </div>
 
         {/* Tab Content */}
-        {activeTab === 'scenes' && (
-          <SceneEditor project={project} updateProject={updateProject} webAspect={webAspect} />
-        )}
-        {activeTab === 'inventory' && (
-          <InventoryManager project={project} updateProject={updateProject} />
-        )}
-        {activeTab === 'characters' && (
-          <CharacterManager project={project} updateProject={updateProject} webAspect={webAspect} />
-        )}
-        {activeTab === 'flags' && (
-          <FlagsManager project={project} updateProject={updateProject} />
-        )}
-        {activeTab === 'sounds' && (
-          <SoundManager project={project} updateProject={updateProject} currentUser={currentUser} webAspect={webAspect} />
-        )}
-        {activeTab === 'settings' && (
-          <GeneralSettings project={project} updateProject={updateProject} currentUser={currentUser} webAspect={webAspect} />
-        )}
+        <Suspense
+          fallback={
+            <div className="p-8 text-center text-xs font-semibold opacity-70">
+              Cargando pestaña del editor...
+            </div>
+          }
+        >
+          {activeTab === 'scenes' && (
+            <SceneEditor project={project} updateProject={updateProject} webAspect={webAspect} />
+          )}
+          {activeTab === 'inventory' && (
+            <InventoryManager project={project} updateProject={updateProject} />
+          )}
+          {activeTab === 'characters' && (
+            <CharacterManager project={project} updateProject={updateProject} webAspect={webAspect} />
+          )}
+          {activeTab === 'flags' && (
+            <FlagsManager project={project} updateProject={updateProject} />
+          )}
+          {activeTab === 'sounds' && (
+            <SoundManager project={project} updateProject={updateProject} currentUser={currentUser} webAspect={webAspect} />
+          )}
+          {activeTab === 'settings' && (
+            <GeneralSettings project={project} updateProject={updateProject} currentUser={currentUser} webAspect={webAspect} />
+          )}
+        </Suspense>
       </div>
     </div>
   );
