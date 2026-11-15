@@ -122,9 +122,14 @@ export async function uploadMediaFileToGitHub(params: {
     }),
   });
 
-  const payload = await res.json().catch(() => ({}));
+  const rawText = await res.text().catch(() => '');
+  let payload: any = {};
+  try {
+    payload = rawText ? JSON.parse(rawText) : {};
+  } catch {}
   if (!res.ok) {
-    throw new Error(payload?.error || `Error ${res.status} al subir el archivo.`);
+    const fallbackDetail = rawText ? ` (${rawText.slice(0, 120).replace(/\s+/g, ' ').trim()})` : '';
+    throw new Error(payload?.error || `Error ${res.status} al subir el archivo.${fallbackDetail}`);
   }
   return payload as UploadedMediaResponse;
 }
@@ -158,9 +163,14 @@ export async function uploadBase64MediaToGitHub(params: {
     }),
   });
 
-  const payload = await res.json().catch(() => ({}));
+  const rawText = await res.text().catch(() => '');
+  let payload: any = {};
+  try {
+    payload = rawText ? JSON.parse(rawText) : {};
+  } catch {}
   if (!res.ok) {
-    throw new Error(payload?.error || `Error ${res.status} al migrar el archivo incrustado.`);
+    const fallbackDetail = rawText ? ` (${rawText.slice(0, 120).replace(/\s+/g, ' ').trim()})` : '';
+    throw new Error(payload?.error || `Error ${res.status} al migrar el archivo incrustado.${fallbackDetail}`);
   }
   return payload as UploadedMediaResponse;
 }
@@ -182,9 +192,14 @@ export async function mirrorMediaUrlToGitHub(params: {
     body: JSON.stringify(params),
   });
 
-  const payload = await res.json().catch(() => ({}));
+  const rawText = await res.text().catch(() => '');
+  let payload: any = {};
+  try {
+    payload = rawText ? JSON.parse(rawText) : {};
+  } catch {}
   if (!res.ok) {
-    throw new Error(payload?.error || `Error ${res.status} al copiar la URL externa.`);
+    const fallbackDetail = rawText ? ` (${rawText.slice(0, 120).replace(/\s+/g, ' ').trim()})` : '';
+    throw new Error(payload?.error || `Error ${res.status} al copiar la URL externa.${fallbackDetail}`);
   }
   return payload as UploadedMediaResponse;
 }
