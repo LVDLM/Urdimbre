@@ -7,6 +7,12 @@ import { exportProjectAsZip } from '../../utils/zipExporter';
 import { renderTextWithLinks } from '../../utils/textUtils';
 import { EditStoryModal } from './EditStoryModal';
 import { StarRatingDisplay } from '../common/StarRating';
+import {
+  getTutorialPriority,
+  isStoryCompleted,
+  isTutorialCompleted,
+  subscribeStoryProgress,
+} from '../../utils/storyProgress';
 
 interface PublicCatalogProps {
   onPlayProject: (project: GameProject) => void;
@@ -37,6 +43,7 @@ export const PublicCatalog: React.FC<PublicCatalogProps> = ({
   const [editTargetDoc, setEditTargetDoc] = useState<CloudProjectDoc | null>(null);
   const [fullCoverImage, setFullCoverImage] = useState<{ src: string; title: string } | null>(null);
   const [showAllStories, setShowAllStories] = useState(false);
+  const [progressRevision, setProgressRevision] = useState(0);
 
   const fetchCatalog = async () => {
     setLoading(true);
@@ -47,6 +54,7 @@ export const PublicCatalog: React.FC<PublicCatalogProps> = ({
 
   useEffect(() => {
     fetchCatalog();
+    return subscribeStoryProgress(() => setProgressRevision((v) => v + 1));
   }, []);
 
   const handleConfirmEditMode = async (mode: 'keep_published' | 'hide_to_draft') => {
@@ -167,8 +175,25 @@ export const PublicCatalog: React.FC<PublicCatalogProps> = ({
     return matchesSearch && matchesGenre;
   });
 
+  // Keep "Tutorial" first until the reader completes it (reads progressRevision to stay reactive)
+  const tutorialFinished =
+    progressRevision >= 0 &&
+    (isTutorialCompleted() ||
+      publishedProjects.some((doc) => {
+        const docTitle = doc.title || doc.publishedData?.title || doc.projectData?.title;
+        return getTutorialPriority(docTitle) > 0 && isStoryCompleted(doc.id);
+      }));
+
+  const orderedStories = tutorialFinished
+    ? filtered
+    : [...filtered].sort((a, b) => {
+        const titleA = a.title || a.publishedData?.title || a.projectData?.title;
+        const titleB = b.title || b.publishedData?.title || b.projectData?.title;
+        return getTutorialPriority(titleB) - getTutorialPriority(titleA);
+      });
+
   // Limit to max 6 stories initially
-  const visibleStories = showAllStories ? filtered : filtered.slice(0, 6);
+  const visibleStories = showAllStories ? orderedStories : orderedStories.slice(0, 6);
 
   return (
     <div className={`flex-1 transition-colors duration-300 w-full min-h-full ${

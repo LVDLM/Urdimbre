@@ -43,6 +43,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { StarRatingDisplay, StoryRatingWidget } from './common/StarRating';
 import { getStoryRating } from '../lib/firebase';
+import { markStoryCompleted } from '../utils/storyProgress';
 
 interface GamePlayerProps {
   project: GameProject;
@@ -628,6 +629,28 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
       const textVal = typeof t === 'string' ? t : t.text;
       return /\[(?:Terminar \/ Cargar partida|Terminar|Cargar partida|Fin de partida)\]/i.test(textVal);
     });
+
+  const isGoodEndingReached =
+    !isSceneTesting &&
+    !gameState.isGameOver &&
+    (
+      currentScene?.type === 'final' ||
+      (currentScene?.textBlocks || []).some((b) => {
+        if (b.type !== 'final' || b.isGameOver) return false;
+        if (!checkConditions(b.visibleIfFlags, b.hiddenIfFlags)) return false;
+        const reqItems = b.requiredItemIds || (b.requiredItemId ? [b.requiredItemId] : []);
+        if (reqItems.length > 0 && !reqItems.every((id) => gameState.inventory.includes(id))) {
+          return false;
+        }
+        return true;
+      })
+    );
+
+  useEffect(() => {
+    if (isGoodEndingReached) {
+      markStoryCompleted(project.id, project.title);
+    }
+  }, [isGoodEndingReached, project.id, project.title]);
 
   const handleSelectVerb = (verb: VerbType) => {
     playSound('select');
