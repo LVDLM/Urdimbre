@@ -33,6 +33,7 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 import { UserProfile, CloudProjectDoc, GameProject, UserRole, SoundDefinition, PublicationStatus } from '../types';
 import { DEFAULT_SOUND_LIBRARY, setGlobalSoundLibrary } from '../utils/audio';
+import { rewriteProjectMediaUrlsForPublication } from '../utils/mediaLinks';
 
 // Designated Admin Emails
 export const ADMIN_EMAILS = ['lavozdelosmuertos@gmail.com', 'admin@plataforma.com'];
@@ -744,8 +745,10 @@ export async function saveProjectToCloud(
 
   if (effectiveStatus === 'published') {
     if (publishNewVersion || !existingData?.publishedData) {
-      // Author / admin is officially publishing or updating the public live snapshot
-      publishedData = projectData;
+      // Author / admin is officially publishing or updating the public live snapshot:
+      // Rewrite cdn.jsdelivr.net URLs to canonical lvdlm.github.io URLs in publishedData,
+      // while preserving fast CDN URLs in the editable draft (projectData).
+      publishedData = rewriteProjectMediaUrlsForPublication(projectData);
       publishedVersion = currentPubVersion + 1;
       publishedAt = now;
       hasUnpublishedChanges = false;
@@ -809,7 +812,7 @@ export async function toggleProjectVisibilityInGallery(
   if (visible) {
     await updateDoc(ref, {
       status: 'published',
-      publishedData: data.publishedData || data.projectData,
+      publishedData: rewriteProjectMediaUrlsForPublication(data.publishedData || data.projectData),
       updatedAt: now,
     });
   } else {
@@ -841,7 +844,7 @@ export async function updateProjectStatusInCloud(
   if (status === 'published') {
     updateData.publishedAt = now;
     if (existingData?.projectData) {
-      updateData.publishedData = existingData.projectData;
+      updateData.publishedData = rewriteProjectMediaUrlsForPublication(existingData.projectData);
       updateData.publishedVersion = (existingData.publishedVersion || 0) + 1;
       updateData.hasUnpublishedChanges = false;
     }
@@ -855,6 +858,26 @@ export async function updateProjectStatusInCloud(
 
   const sanitized = JSON.parse(JSON.stringify(updateData));
   await updateDoc(ref, sanitized);
+}
+
+/**
+ * Admin: Update migrated media URLs on projectData and/or publishedData without altering publication status or authorship.
+ */
+export async function updateProjectMediaInCloud(
+  docId: string,
+  payload: { projectData?: GameProject; publishedData?: GameProject }
+): Promise<void> {
+  const ref = doc(db, 'projects', docId);
+  const updateData: Record<string, any> = {
+    updatedAt: new Date().toISOString(),
+  };
+  if (payload.projectData) {
+    updateData.projectData = JSON.parse(JSON.stringify(payload.projectData));
+  }
+  if (payload.publishedData) {
+    updateData.publishedData = JSON.parse(JSON.stringify(payload.publishedData));
+  }
+  await updateDoc(ref, updateData);
 }
 
 /**

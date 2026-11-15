@@ -4,6 +4,7 @@ import { getSoundOptionsGrouped } from '../../utils/audio';
 import { Package, Plus, Trash2, Key, BookOpen, Flashlight, Box, Sparkles, Edit2, Puzzle, ArrowRight, Zap, Check } from 'lucide-react';
 import { ItemQuantityDropdown } from './ItemQuantityDropdown';
 import { getGrants, getRemovals } from '../../utils/itemRules';
+import { MediaRepoControls } from './MediaRepoControls';
 
 // Texto corto de un mapa de cantidades: "2x Flecha, Arco"
 const describeQuantities = (map: Record<string, number>, items: InventoryItem[]): string =>
@@ -466,41 +467,60 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ project, upd
         </div>
 
         {(imageFileData || imageUrl) ? (
-          <div className="flex items-center gap-3 bg-slate-900 border border-amber-500/30 rounded-xl p-2.5">
-            <img
-              src={imageFileData || imageUrl}
-              alt="Objeto"
-              className="w-16 h-16 object-contain rounded-lg border border-slate-700 bg-slate-950 shrink-0"
-            />
-            <div className="text-xs space-y-0.5 overflow-hidden">
-              <p className="font-semibold text-amber-300 truncate">
-                {imageFileName || 'Imagen de objeto lista'}
-              </p>
-              <p className="text-[10px] text-slate-400">
-                Se incluirá en la carpeta <code className="text-amber-200">IMG/</code> al exportar.
-              </p>
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 bg-slate-900 border border-amber-500/30 rounded-xl p-2.5">
+              <img
+                src={imageFileData || imageUrl}
+                alt="Objeto"
+                className="w-16 h-16 object-contain rounded-lg border border-slate-700 bg-slate-950 shrink-0"
+              />
+              <div className="text-xs space-y-0.5 overflow-hidden">
+                <p className="font-semibold text-amber-300 truncate">
+                  {imageFileName || imageUrl || 'Imagen de objeto lista'}
+                </p>
+                <p className="text-[10px] text-slate-400">
+                  {imageFileData
+                    ? 'Imagen incrustada en Base64. Puedes subirla al repositorio GitHub.'
+                    : 'Se incluirá en la carpeta IMG/ al exportar.'}
+                </p>
+              </div>
             </div>
+            <MediaRepoControls
+              kind="img"
+              project={project}
+              currentUrl={imageUrl}
+              embeddedDataUrl={imageFileData}
+              preferredName={name || editingItemId || 'objeto'}
+              showUploadButton={false}
+              onHostedUrl={(immediateUrl, repoPath) => {
+                setImageUrl(immediateUrl);
+                setImageFileData(undefined);
+                setImageFileName(repoPath || undefined);
+              }}
+            />
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <label className="flex items-center justify-center gap-2 py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl cursor-pointer text-xs text-slate-300 transition-colors">
-              <span>📂 Subir imagen de objeto</span>
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleImageFileUpload(f);
-                }}
-              />
-            </label>
+          <div className="space-y-2">
             <input
               type="text"
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="O escribe URL de la imagen (https://...)"
-              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-amber-500 outline-none"
+              placeholder="Pega URL de la imagen (https://...) o sube un archivo abajo"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-amber-500 outline-none"
+            />
+            <MediaRepoControls
+              kind="img"
+              project={project}
+              currentUrl={imageUrl}
+              embeddedDataUrl={imageFileData}
+              preferredName={name || editingItemId || 'objeto'}
+              uploadLabel="Subir imagen de objeto"
+              onHostedUrl={(immediateUrl, repoPath) => {
+                setImageUrl(immediateUrl);
+                setImageFileData(undefined);
+                setImageFileName(repoPath || undefined);
+              }}
+              onFallbackLocalFile={handleImageFileUpload}
             />
           </div>
         )}

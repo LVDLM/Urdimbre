@@ -9,6 +9,7 @@ import { validateProjectScenes } from '../../utils/sceneValidator';
 import { ValidationPanel } from './ValidationPanel';
 import { GamePlayer } from '../GamePlayer';
 import { AutoGrowTextarea } from '../common/AutoGrowTextarea';
+import { MediaRepoControls } from './MediaRepoControls';
 import {
   FileText,
   Plus,
@@ -730,7 +731,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
     reader.readAsDataURL(file);
   };
 
-  const handleUpdateBlockImageUrl = (blockId: string, url: string) => {
+  const handleUpdateBlockImageUrl = (blockId: string, url: string, repoPath?: string) => {
     updateProject((prev) => ({
       ...prev,
       scenes: prev.scenes.map((s) => {
@@ -738,7 +739,14 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
         return {
           ...s,
           textBlocks: s.textBlocks.map((b) =>
-            b.id === blockId ? { ...b, imageUrl: url, imageFileData: undefined } : b
+            b.id === blockId
+              ? {
+                  ...b,
+                  imageUrl: url || undefined,
+                  imageFileData: undefined,
+                  imageFileName: repoPath || b.imageFileName,
+                }
+              : b
           ),
         };
       }),
@@ -2704,41 +2712,56 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
                       </div>
 
                       {(block.imageFileData || block.imageUrl) ? (
-                        <div className="flex items-center gap-3 bg-slate-900/90 border border-amber-500/30 rounded-xl p-2.5">
-                          <img
-                            src={block.imageFileData || block.imageUrl}
-                            alt="Previsualización"
-                            className="w-24 h-20 object-contain bg-black/60 rounded-lg border border-white/10 shrink-0 p-0.5"
-                          />
-                          <div className="text-xs space-y-1 overflow-hidden">
-                            <p className="font-semibold text-amber-300 truncate">
-                              {block.imageFileName || 'Imagen cargada'}
-                            </p>
-                            <p className="text-[10px] text-slate-400">
-                              Se exportará dentro de la carpeta <code className="text-amber-200">IMG/</code> si exportas en ZIP.
-                            </p>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-3 bg-slate-900/90 border border-amber-500/30 rounded-xl p-2.5">
+                            <img
+                              src={block.imageFileData || block.imageUrl}
+                              alt="Previsualización"
+                              className="w-24 h-20 object-contain bg-black/60 rounded-lg border border-white/10 shrink-0 p-0.5"
+                            />
+                            <div className="text-xs space-y-1 overflow-hidden">
+                              <p className="font-semibold text-amber-300 truncate">
+                                {block.imageFileName || block.imageUrl || 'Imagen cargada'}
+                              </p>
+                              <p className="text-[10px] text-slate-400">
+                                {block.imageFileData
+                                  ? 'Imagen incrustada en Base64. Puedes subirla al repositorio GitHub para aligerar el proyecto.'
+                                  : 'Se incluirá dentro de la carpeta IMG/ si exportas en ZIP.'}
+                              </p>
+                            </div>
                           </div>
+                          <MediaRepoControls
+                            kind="img"
+                            project={project}
+                            currentUrl={block.imageUrl}
+                            embeddedDataUrl={block.imageFileData}
+                            preferredName={block.imageFileName || block.id}
+                            showUploadButton={false}
+                            onHostedUrl={(immediateUrl, repoPath) =>
+                              handleUpdateBlockImageUrl(block.id, immediateUrl, repoPath)
+                            }
+                          />
                         </div>
                       ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <label className="flex items-center justify-center gap-2 py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-white/10 rounded-xl cursor-pointer text-xs text-slate-300 transition-colors">
-                            <span>📂 Subir archivo de imagen</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) handleBlockImageUpload(block.id, f);
-                              }}
-                            />
-                          </label>
+                        <div className="space-y-2">
                           <input
                             type="text"
                             value={block.imageUrl || ''}
                             onChange={(e) => handleUpdateBlockImageUrl(block.id, e.target.value)}
-                            placeholder="O escribe URL de imagen (https://...)"
-                            className="bg-slate-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-amber-500 outline-none"
+                            placeholder="Pega una URL externa de imagen (https://...) o sube un archivo abajo"
+                            className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:border-amber-500 outline-none"
+                          />
+                          <MediaRepoControls
+                            kind="img"
+                            project={project}
+                            currentUrl={block.imageUrl}
+                            embeddedDataUrl={block.imageFileData}
+                            preferredName={block.id}
+                            uploadLabel="Subir archivo de imagen"
+                            onHostedUrl={(immediateUrl, repoPath) =>
+                              handleUpdateBlockImageUrl(block.id, immediateUrl, repoPath)
+                            }
+                            onFallbackLocalFile={(file) => handleBlockImageUpload(block.id, file)}
                           />
                         </div>
                       )}

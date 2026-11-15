@@ -38,8 +38,10 @@ import {
   Mail,
   UserPlus,
   ShieldAlert,
-  AlertCircle
+  AlertCircle,
+  FolderGit2
 } from 'lucide-react';
+import { MediaMigrationModal } from './MediaMigrationModal';
 
 interface AdminReviewPanelProps {
   currentUser: UserProfile | null;
@@ -85,6 +87,7 @@ export const AdminReviewPanel: React.FC<AdminReviewPanelProps> = ({
 
   // Global Admin Message Banner
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showMediaMigrationModal, setShowMediaMigrationModal] = useState(false);
 
   const fetchAdminProjects = async () => {
     setLoadingProjects(true);
@@ -389,7 +392,13 @@ export const AdminReviewPanel: React.FC<AdminReviewPanelProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            onClick={() => setShowMediaMigrationModal(true)}
+            className="px-4 py-2 text-xs font-bold rounded-xl border bg-sky-600 hover:bg-sky-500 text-white border-sky-500 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+          >
+            <FolderGit2 className="w-4 h-4" /> Migrar Medios a GitHub
+          </button>
           <button
             onClick={() => {
               fetchAdminProjects();
@@ -1360,6 +1369,17 @@ export const AdminReviewPanel: React.FC<AdminReviewPanelProps> = ({
           </div>
         </div>
       )}
+
+      <MediaMigrationModal
+        isOpen={showMediaMigrationModal}
+        onClose={() => setShowMediaMigrationModal(false)}
+        projects={adminProjects}
+        currentUser={currentUser}
+        isClean={isClean}
+        onMigrationComplete={() => {
+          fetchAdminProjects();
+        }}
+      />
     </div>
   );
 };

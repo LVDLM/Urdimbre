@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { GameProject, GameCharacter, InventoryItem } from '../../types';
-import { User, Plus, Trash2, Edit, Upload, Image as ImageIcon, Heart, Package } from 'lucide-react';
+import { User, Plus, Trash2, Edit, Image as ImageIcon, Heart, Package } from 'lucide-react';
+import { MediaRepoControls } from './MediaRepoControls';
 
 interface CharacterManagerProps {
   project: GameProject;
@@ -62,11 +63,8 @@ export const CharacterManager: React.FC<CharacterManagerProps> = ({
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLocalFallbackImageUpload = (file: File) => {
     if (!selectedCharacter) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (event) => {
       const base64 = event.target?.result as string;
@@ -75,7 +73,7 @@ export const CharacterManager: React.FC<CharacterManagerProps> = ({
         ...selectedCharacter,
         imageFileData: base64,
         imageFileName: `img/npc_${selectedCharacter.id}_${cleanFileName}`,
-        imageUrl: base64,
+        imageUrl: undefined,
       });
     };
     reader.readAsDataURL(file);
@@ -345,17 +343,7 @@ export const CharacterManager: React.FC<CharacterManagerProps> = ({
                       </div>
                     )}
 
-                    <div className="space-y-2 flex-1">
-                      <label className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs inline-flex items-center gap-1.5 cursor-pointer transition-colors">
-                        <Upload className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Subir Imagen Local</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageUpload}
-                          className="hidden"
-                        />
-                      </label>
+                    <div className="space-y-2 flex-1 w-full">
                       <div className="text-[11px]">
                         <input
                           type="text"
@@ -364,14 +352,33 @@ export const CharacterManager: React.FC<CharacterManagerProps> = ({
                             handleUpdateCharacter({
                               ...selectedCharacter,
                               imageUrl: e.target.value || undefined,
+                              imageFileData: e.target.value ? undefined : selectedCharacter.imageFileData,
                             })
                           }
-                          placeholder="O introduce una URL externa de imagen..."
-                          className={`w-full px-2.5 py-1 rounded-md border text-[11px] ${
+                          placeholder="Introduce una URL externa de imagen o sube un archivo abajo..."
+                          className={`w-full px-2.5 py-1.5 rounded-md border text-[11px] ${
                             isClean ? 'bg-white border-slate-300 text-slate-800' : 'bg-black/40 border-white/10 text-slate-200'
                           }`}
                         />
                       </div>
+                      <MediaRepoControls
+                        kind="img"
+                        project={project}
+                        currentUrl={selectedCharacter.imageUrl}
+                        embeddedDataUrl={selectedCharacter.imageFileData}
+                        preferredName={selectedCharacter.name || selectedCharacter.id}
+                        uploadLabel="Subir retrato al Repo"
+                        isClean={isClean}
+                        onHostedUrl={(immediateUrl, repoPath) =>
+                          handleUpdateCharacter({
+                            ...selectedCharacter,
+                            imageUrl: immediateUrl,
+                            imageFileData: undefined,
+                            imageFileName: repoPath,
+                          })
+                        }
+                        onFallbackLocalFile={handleLocalFallbackImageUpload}
+                      />
                     </div>
                   </div>
                 </div>

@@ -48,6 +48,8 @@ import {
 } from '../../lib/firebase';
 import { VoicePanel } from './VoicePanel';
 import { DEFAULT_VOICE } from '../../utils/voicePresets';
+import { MediaRepoControls } from './MediaRepoControls';
+import { isGitHubMediaUrl } from '../../utils/mediaLinks';
 
 interface SoundManagerProps {
   project: GameProject;
@@ -1529,6 +1531,25 @@ export const SoundManager: React.FC<SoundManagerProps> = ({
                       </div>
                     )}
                   </div>
+
+                  <MediaRepoControls
+                    kind="sounds"
+                    project={activeProjectDoc ? { id: activeProjectDoc.id, title: activeProjectTitle } : project}
+                    isShared={Boolean(activeSoundForm.isGlobal)}
+                    currentUrl={activeSoundForm.url}
+                    preferredName={activeSoundForm.name || activeSoundForm.id}
+                    isClean={isClean}
+                    uploadLabel="Subir archivo de audio al Repo"
+                    onHostedUrl={(immediateUrl) => {
+                      setActiveSoundForm({
+                        ...activeSoundForm,
+                        sourceType: 'url',
+                        url: immediateUrl,
+                      });
+                      setUrlTestingStatus('idle');
+                      setUrlErrorMessage('');
+                    }}
+                  />
                 </div>
               )}
 
@@ -2088,6 +2109,18 @@ export const SoundManager: React.FC<SoundManagerProps> = ({
                   placeholder="Nombre del sonido duplicado..."
                 />
               </div>
+
+              {activeSoundForm.sourceType === 'url' && isGitHubMediaUrl(activeSoundForm.url) && (
+                <p
+                  className={`text-[11px] px-3 py-2 rounded-xl border ${
+                    isClean
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                  }`}
+                >
+                  Al duplicar este sonido se reutilizará el enlace existente en <strong>Urdimbre_medios</strong> sin volver a subir ni duplicar el archivo.
+                </p>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-500/10">
