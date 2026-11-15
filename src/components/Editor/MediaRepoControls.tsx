@@ -289,7 +289,7 @@ export const MediaRepoControls: React.FC<MediaRepoControlsProps> = ({
         {' · '}Límites: <strong>{formatBytes(maxUpload)}</strong> subida directa,{' '}
         <strong>{formatBytes(maxMirror)}</strong> copiar URL
         {!registered && ' · Requiere cuenta de autor registrada'}
-        {status && !status.configured && ' · (Pendiente GITHUB_MEDIA_TOKEN en servidor)'}
+        {status && !status.configured && (status.diagnosticError ? ` · (${status.diagnosticError})` : ' · (Pendiente GITHUB_MEDIA_TOKEN en servidor)')}
       </p>
 
       {successMsg && (

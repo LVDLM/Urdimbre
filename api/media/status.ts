@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { getMediaServiceStatus } from '../../server/mediaService.ts';
+import { getMediaServiceStatus } from '../../server/mediaService';
 
 export default function handler(
   _req: IncomingMessage,

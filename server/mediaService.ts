@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const MAX_DIRECT_UPLOAD_BYTES = 3 * 1024 * 1024; // 3 MB
 export const MAX_MIRROR_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -48,12 +49,28 @@ function getRepoConfig() {
 let cachedFirebaseConfig: FirebaseClientConfig | null = null;
 function getFirebaseConfig(): FirebaseClientConfig {
   if (cachedFirebaseConfig) return cachedFirebaseConfig;
-  try {
-    const raw = fs.readFileSync(path.join(process.cwd(), 'firebase-applet-config.json'), 'utf-8');
-    cachedFirebaseConfig = JSON.parse(raw) as FirebaseClientConfig;
-  } catch {
-    cachedFirebaseConfig = {};
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const candidatePaths = [
+    path.join(process.cwd(), 'firebase-applet-config.json'),
+    path.resolve(moduleDir, '../firebase-applet-config.json'),
+    path.resolve(moduleDir, '../../firebase-applet-config.json'),
+  ];
+  for (const cfgPath of candidatePaths) {
+    try {
+      if (fs.existsSync(cfgPath)) {
+        const raw = fs.readFileSync(cfgPath, 'utf-8');
+        cachedFirebaseConfig = JSON.parse(raw) as FirebaseClientConfig;
+        return cachedFirebaseConfig;
+      }
+    } catch {
+      // Try next candidate path
+    }
   }
+  cachedFirebaseConfig = {
+    apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY,
+    projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID,
+    firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID,
+  };
   return cachedFirebaseConfig;
 }
 

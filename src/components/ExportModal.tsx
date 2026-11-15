@@ -76,7 +76,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       setIsExportingZip(true);
       const blob = await exportProjectAsZip(project, (names) => {
         alert(
-          'Estos sonidos no se han podido descargar y seguirán usando su enlace original dentro del juego:\n\n' +
+          'Estos archivos multimedia no se han podido descargar y seguirán usando su enlace original dentro del juego:\n\n' +
             names.join('\n')
         );
       });

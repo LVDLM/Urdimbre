@@ -13,16 +13,24 @@ export function generateStandaloneHTML(project: GameProject, isForZip: boolean =
   // If exporting for ZIP, resolve image path references to img/ folder
   const processedProject = JSON.parse(JSON.stringify(project)) as GameProject;
   if (isForZip) {
-    for (const item of processedProject.inventoryItems) {
+    const normalizeZipImgPath = (fileName: string) =>
+      fileName.startsWith('img/') ? fileName : `img/${fileName}`;
+    for (const item of processedProject.inventoryItems || []) {
       if (item.imageFileName) {
-        item.imageUrl = `img/${item.imageFileName}`;
+        item.imageUrl = normalizeZipImgPath(item.imageFileName);
         item.imageFileData = undefined;
       }
     }
-    for (const scene of processedProject.scenes) {
-      for (const block of scene.textBlocks) {
+    for (const ch of processedProject.characters || []) {
+      if (ch.imageFileName) {
+        ch.imageUrl = normalizeZipImgPath(ch.imageFileName);
+        ch.imageFileData = undefined;
+      }
+    }
+    for (const scene of processedProject.scenes || []) {
+      for (const block of scene.textBlocks || []) {
         if (block.imageFileName) {
-          block.imageUrl = `img/${block.imageFileName}`;
+          block.imageUrl = normalizeZipImgPath(block.imageFileName);
           block.imageFileData = undefined;
         }
       }

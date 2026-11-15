@@ -10,6 +10,7 @@ export interface MediaServiceStatus {
   branch: string;
   maxUploadBytes: number;
   maxMirrorBytes: number;
+  diagnosticError?: string;
 }
 
 export interface UploadedMediaResponse {
@@ -28,15 +29,23 @@ export async function getMediaServiceStatus(forceRefresh = false): Promise<Media
   if (!forceRefresh && cachedStatus && Date.now() - cachedStatus.fetchedAt < 30_000) {
     return cachedStatus.value;
   }
+  let diagnosticError: string | undefined;
   try {
     const res = await fetch('/api/media/status');
-    if (res.ok) {
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    if (res.ok && contentType.includes('application/json')) {
       const data = (await res.json()) as MediaServiceStatus;
       cachedStatus = { value: data, fetchedAt: Date.now() };
       return data;
     }
-  } catch {
-    // Fallback defaults when API endpoint is unavailable
+    if (res.ok && !contentType.includes('application/json')) {
+      diagnosticError =
+        'La ruta /api/media/status devolvió HTML en lugar de JSON (posible redirección SPA o función /api no desplegada en Vercel).';
+    } else {
+      diagnosticError = `El endpoint /api/media/status respondió HTTP ${res.status}.`;
+    }
+  } catch (err: any) {
+    diagnosticError = `No se pudo conectar con /api/media/status (${err?.message || 'error de red'}).`;
   }
   return {
     configured: false,
@@ -45,6 +54,7 @@ export async function getMediaServiceStatus(forceRefresh = false): Promise<Media
     branch: 'main',
     maxUploadBytes: MAX_DIRECT_UPLOAD_BYTES,
     maxMirrorBytes: MAX_MIRROR_BYTES,
+    diagnosticError,
   };
 }
 

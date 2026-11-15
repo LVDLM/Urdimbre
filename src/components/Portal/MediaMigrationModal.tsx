@@ -669,11 +669,19 @@ export const MediaMigrationModal: React.FC<MediaMigrationModalProps> = ({
             <div className="p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 text-xs text-amber-300 flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
               <div className="space-y-1">
-                <p className="font-bold">Falta configurar el secreto GITHUB_MEDIA_TOKEN en el servidor</p>
-                <p>
-                  Puedes escanear las historias para ver qué archivos necesitan migración, pero para subirlos a{' '}
-                  <code>{status.owner}/{status.repo}</code> debes añadir <code>GITHUB_MEDIA_TOKEN</code> en las variables de entorno / Secrets.
-                </p>
+                {status.diagnosticError ? (
+                  <>
+                    <p className="font-bold">La API de medios (/api/media/status) no está respondiendo correctamente</p>
+                    <p>{status.diagnosticError}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-bold">Falta configurar el secreto GITHUB_MEDIA_TOKEN en el servidor</p>
+                    <p>
+                      El servidor respondió correctamente, pero <code>process.env.GITHUB_MEDIA_TOKEN</code> está vacío en este entorno. En Vercel, verifica que la variable esté marcada para <strong>Production</strong> (y Preview) y haz un <strong>Redeploy</strong>.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           )}

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleUploadMediaRequest, HttpError } from '../../server/mediaService.ts';
+import { handleUploadMediaRequest, HttpError } from '../../server/mediaService';
 
 async function readJsonBody(req: IncomingMessage & { body?: any }): Promise<any> {
   if (req.body && typeof req.body === 'object') return req.body;
