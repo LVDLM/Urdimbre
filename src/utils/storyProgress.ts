@@ -4,6 +4,8 @@ const PROGRESS_EVENT = 'urdimbre:story-progress-updated';
 interface StoryProgressState {
   completedIds: string[];
   tutorialCompleted: boolean;
+  lastOpenedStoryId?: string;
+  lastOpenedStoryTitle?: string;
   updatedAt?: string;
 }
 
@@ -51,6 +53,14 @@ function readProgressState(): StoryProgressState {
         ? parsed.completedIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
         : [],
       tutorialCompleted: Boolean(parsed.tutorialCompleted),
+      lastOpenedStoryId:
+        typeof parsed.lastOpenedStoryId === 'string' && parsed.lastOpenedStoryId.trim().length > 0
+          ? parsed.lastOpenedStoryId.trim()
+          : undefined,
+      lastOpenedStoryTitle:
+        typeof parsed.lastOpenedStoryTitle === 'string' && parsed.lastOpenedStoryTitle.trim().length > 0
+          ? parsed.lastOpenedStoryTitle.trim()
+          : undefined,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : undefined,
     };
   } catch {
@@ -66,6 +76,35 @@ function writeProgressState(nextState: StoryProgressState): void {
   } catch {
     // Ignore storage quota or private-mode access errors
   }
+}
+
+export function markLastOpenedStory(storyId?: string, title?: string): void {
+  const cleanId = (storyId || '').trim();
+  const cleanTitle = (title || '').trim();
+  if (!cleanId && !cleanTitle) return;
+
+  const current = readProgressState();
+  if (
+    current.lastOpenedStoryId === (cleanId || undefined) &&
+    current.lastOpenedStoryTitle === (cleanTitle || undefined)
+  ) {
+    return;
+  }
+
+  writeProgressState({
+    ...current,
+    lastOpenedStoryId: cleanId || current.lastOpenedStoryId,
+    lastOpenedStoryTitle: cleanTitle || current.lastOpenedStoryTitle,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export function getLastOpenedStory(): { id?: string; title?: string } {
+  const current = readProgressState();
+  return {
+    id: current.lastOpenedStoryId,
+    title: current.lastOpenedStoryTitle,
+  };
 }
 
 export function markStoryCompleted(storyId?: string, title?: string): void {
@@ -86,6 +125,7 @@ export function markStoryCompleted(storyId?: string, title?: string): void {
       : current.completedIds;
 
   writeProgressState({
+    ...current,
     completedIds: nextCompletedIds,
     tutorialCompleted: current.tutorialCompleted || isTut,
     updatedAt: new Date().toISOString(),

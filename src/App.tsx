@@ -28,6 +28,7 @@ import { Footer } from './components/Footer';
 import { setSoundEnabled, stopAllAudio } from './utils/audio';
 import { auth, getUserProfile, createOrUpdateUserProfile, ADMIN_EMAILS, getProjectByIdFromCloud, consolidateAdminProfilesInFirestore, getMasterAdminProfile } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { markLastOpenedStory } from './utils/storyProgress';
 
 const sanitizeProjectForPlay = (proj: GameProject): GameProject => {
   return {
@@ -94,6 +95,7 @@ export default function App() {
             });
             setProject(targetProj);
             setCurrentCloudDocId(docData.id);
+            markLastOpenedStory(docData.id, targetProj.title);
             resetGameStateForProject(targetProj);
             setCurrentView('play');
           }
@@ -469,6 +471,7 @@ export default function App() {
               const projToPlay = sanitizeProjectForPlay(selectedProj);
               setProject(projToPlay);
               if (selectedProj.id) setCurrentCloudDocId(selectedProj.id);
+              markLastOpenedStory(selectedProj.id, projToPlay.title);
               resetGameStateForProject(projToPlay);
               setCurrentView('play');
             }}
@@ -577,6 +580,7 @@ export default function App() {
             }}
             onLoadGameStateToPlay={(projData, slotData) => {
               setProject(projData);
+              markLastOpenedStory(projData.id, projData.title);
               setGameState({
                 currentSceneId: slotData.currentSceneId,
                 inventory: slotData.inventoryItemIds || [],

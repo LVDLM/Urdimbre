@@ -40,7 +40,7 @@ export const MediaRepoControls: React.FC<MediaRepoControlsProps> = ({
   currentUrl,
   embeddedDataUrl,
   preferredName,
-  accept = kind === 'img' ? 'image/*' : 'audio/*,.mp3,.wav,.ogg,.m4a,.webm',
+  accept = kind === 'img' ? 'image/*' : 'audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.webm,.opus',
   uploadLabel = kind === 'img' ? 'Subir imagen al Repo' : 'Subir audio al Repo',
   isClean = false,
   showUploadButton = true,

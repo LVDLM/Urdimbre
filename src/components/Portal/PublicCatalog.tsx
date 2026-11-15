@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Download, Search, BookOpen, Filter, Package, Clock, User, Info, X, Lock, Sun, Moon, CheckCircle2, Compass, Layers, ArrowRight, Tag, ChevronLeft, ChevronRight, Maximize2, Share2, Check, Edit3 } from 'lucide-react';
+import { Play, Download, Search, BookOpen, Filter, Package, Clock, User, Info, X, Lock, Sun, Moon, CheckCircle2, Compass, Layers, ArrowRight, Tag, ChevronLeft, ChevronRight, Maximize2, Share2, Check, Edit3, Star, ArrowUpDown } from 'lucide-react';
 import { CloudProjectDoc, GameProject, UserProfile, GENRE_TAGS } from '../../types';
 import { getPublishedProjects, saveProjectToCloud, toggleProjectVisibilityInGallery } from '../../lib/firebase';
 import { sampleGameProject } from '../../data/sampleGame';
@@ -8,6 +8,7 @@ import { renderTextWithLinks } from '../../utils/textUtils';
 import { EditStoryModal } from './EditStoryModal';
 import { StarRatingDisplay } from '../common/StarRating';
 import {
+  getLastOpenedStory,
   getTutorialPriority,
   isStoryCompleted,
   isTutorialCompleted,
@@ -38,6 +39,7 @@ export const PublicCatalog: React.FC<PublicCatalogProps> = ({
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGenre, setSelectedGenre] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'recent' | 'rating'>('recent');
   const [seeding, setSeeding] = useState(false);
   const [selectedDocModal, setSelectedDocModal] = useState<CloudProjectDoc | null>(null);
   const [editTargetDoc, setEditTargetDoc] = useState<CloudProjectDoc | null>(null);
@@ -175,7 +177,22 @@ export const PublicCatalog: React.FC<PublicCatalogProps> = ({
     return matchesSearch && matchesGenre;
   });
 
-  // Keep "Tutorial" first until the reader completes it (reads progressRevision to stay reactive)
+  const getPublishedTimestamp = (doc: CloudProjectDoc): number => {
+    const dateStr = doc.publishedAt || doc.updatedAt || doc.createdAt;
+    if (!dateStr) return 0;
+    const ts = new Date(dateStr).getTime();
+    return Number.isNaN(ts) ? 0 : ts;
+  };
+
+  const getRatingScore = (doc: CloudProjectDoc): number => {
+    const hasRatings =
+      doc.ratingCount !== undefined ? doc.ratingCount > 0 : (doc.ratingAverage || 0) > 0;
+    return hasRatings ? doc.ratingAverage || 0 : -1;
+  };
+
+  // Keep "Tutorial" first until completed, then last opened story, then newest by publication date
+  // (Reads progressRevision so state stays reactive across storage/progress events)
+  const lastOpenedStory = progressRevision >= 0 ? getLastOpenedStory() : {};
   const tutorialFinished =
     progressRevision >= 0 &&
     (isTutorialCompleted() ||
@@ -184,13 +201,28 @@ export const PublicCatalog: React.FC<PublicCatalogProps> = ({
         return getTutorialPriority(docTitle) > 0 && isStoryCompleted(doc.id);
       }));
 
-  const orderedStories = tutorialFinished
-    ? filtered
-    : [...filtered].sort((a, b) => {
-        const titleA = a.title || a.publishedData?.title || a.projectData?.title;
-        const titleB = b.title || b.publishedData?.title || b.projectData?.title;
-        return getTutorialPriority(titleB) - getTutorialPriority(titleA);
-      });
+  const orderedStories = [...filtered].sort((a, b) => {
+    if (sortBy === 'rating') {
+      const scoreDiff = getRatingScore(b) - getRatingScore(a);
+      if (scoreDiff !== 0) return scoreDiff;
+      const countDiff = (b.ratingCount || 0) - (a.ratingCount || 0);
+      if (countDiff !== 0) return countDiff;
+      return getPublishedTimestamp(b) - getPublishedTimestamp(a);
+    }
+
+    if (!tutorialFinished) {
+      const titleA = a.title || a.publishedData?.title || a.projectData?.title;
+      const titleB = b.title || b.publishedData?.title || b.projectData?.title;
+      const tutDiff = getTutorialPriority(titleB) - getTutorialPriority(titleA);
+      if (tutDiff !== 0) return tutDiff;
+    }
+
+    const isLastA = Boolean(lastOpenedStory.id && a.id === lastOpenedStory.id) ? 1 : 0;
+    const isLastB = Boolean(lastOpenedStory.id && b.id === lastOpenedStory.id) ? 1 : 0;
+    if (isLastB !== isLastA) return isLastB - isLastA;
+
+    return getPublishedTimestamp(b) - getPublishedTimestamp(a);
+  });
 
   // Limit to max 6 stories initially
   const visibleStories = showAllStories ? orderedStories : orderedStories.slice(0, 6);
@@ -260,9 +292,9 @@ export const PublicCatalog: React.FC<PublicCatalogProps> = ({
         <div className={`p-5 rounded-2xl border space-y-4 shadow-sm ${
           isClean ? 'bg-[#FFFDF6] border-[#E5DCB8]' : 'bg-[#2C241C] border-[#42362B]'
         }`}>
-          {/* Search Bar Input */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="relative w-full sm:w-96">
+          {/* Search Bar Input & Sort Selector */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="relative w-full lg:w-96">
               <Search className={`w-4 h-4 absolute left-3.5 top-3 ${isClean ? 'text-[#6B5C46]' : 'text-[#D1C7B7]'}`} />
               <input
                 type="text"
@@ -277,9 +309,46 @@ export const PublicCatalog: React.FC<PublicCatalogProps> = ({
               />
             </div>
 
-            <span className={`text-xs font-medium ${isClean ? 'text-[#6B5C46]' : 'text-[#D1C7B7]'}`}>
-              {filtered.length} {filtered.length === 1 ? 'historia disponible' : 'historias disponibles'}
-            </span>
+            <div className="flex flex-wrap items-center justify-between lg:justify-end gap-3">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className={`text-xs font-bold flex items-center gap-1 mr-0.5 ${isClean ? 'text-[#6B5C46]' : 'text-[#D1C7B7]'}`}>
+                  <ArrowUpDown className={`w-3.5 h-3.5 ${isClean ? 'text-[#A4332A]' : 'text-[#C9A24B]'}`} />
+                  <span>Ordenar:</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSortBy('recent')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                    sortBy === 'recent'
+                      ? 'bg-[#A4332A] text-white border-[#A4332A] shadow-sm'
+                      : isClean
+                      ? 'bg-[#F4EFE3] text-[#6B5C46] hover:bg-[#E5DCB8] border-[#E5DCB8]'
+                      : 'bg-[#1F1913] text-[#D1C7B7] hover:bg-[#382E25] border-[#42362B]'
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Más recientes</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortBy('rating')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                    sortBy === 'rating'
+                      ? 'bg-[#A4332A] text-white border-[#A4332A] shadow-sm'
+                      : isClean
+                      ? 'bg-[#F4EFE3] text-[#6B5C46] hover:bg-[#E5DCB8] border-[#E5DCB8]'
+                      : 'bg-[#1F1913] text-[#D1C7B7] hover:bg-[#382E25] border-[#42362B]'
+                  }`}
+                >
+                  <Star className="w-3.5 h-3.5" />
+                  <span>Mejor puntuación</span>
+                </button>
+              </div>
+
+              <span className={`text-xs font-medium ${isClean ? 'text-[#6B5C46]' : 'text-[#D1C7B7]'}`}>
+                {filtered.length} {filtered.length === 1 ? 'historia disponible' : 'historias disponibles'}
+              </span>
+            </div>
           </div>
 
           {/* Alphabetical Genre Tags Selector Chips */}

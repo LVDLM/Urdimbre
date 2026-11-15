@@ -203,6 +203,9 @@ const IMG_EXT_BY_MIME: Record<string, string> = {
 const SOUND_EXT_BY_MIME: Record<string, string> = {
   'audio/mpeg': 'mp3',
   'audio/mp3': 'mp3',
+  'audio/mpeg3': 'mp3',
+  'audio/x-mpeg': 'mp3',
+  'audio/x-mp3': 'mp3',
   'audio/ogg': 'ogg',
   'application/ogg': 'ogg',
   'audio/vorbis': 'ogg',
@@ -210,12 +213,17 @@ const SOUND_EXT_BY_MIME: Record<string, string> = {
   'audio/wav': 'wav',
   'audio/x-wav': 'wav',
   'audio/wave': 'wav',
+  'audio/vnd.wave': 'wav',
   'audio/mp4': 'm4a',
+  'audio/m4a': 'm4a',
   'audio/x-m4a': 'm4a',
+  'video/mp4': 'm4a',
   'audio/aac': 'aac',
+  'audio/x-aac': 'aac',
   'audio/flac': 'flac',
   'audio/x-flac': 'flac',
   'audio/webm': 'webm',
+  'video/webm': 'webm',
 };
 
 const VALID_IMG_EXTS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']);

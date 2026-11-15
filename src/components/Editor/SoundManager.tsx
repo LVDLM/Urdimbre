@@ -49,7 +49,17 @@ import {
 import { VoicePanel } from './VoicePanel';
 import { DEFAULT_VOICE } from '../../utils/voicePresets';
 import { MediaRepoControls } from './MediaRepoControls';
-import { isGitHubMediaUrl } from '../../utils/mediaLinks';
+import {
+  extractGitHubMediaRepoPath,
+  isExternalHttpUrl,
+  isGitHubMediaUrl,
+  toImmediateMediaUrl,
+} from '../../utils/mediaLinks';
+import {
+  getMediaServiceStatus,
+  mirrorMediaUrlToGitHub,
+  uploadBase64MediaToGitHub,
+} from '../../utils/mediaUploader';
 
 interface SoundManagerProps {
   project: GameProject;
@@ -526,6 +536,34 @@ export const SoundManager: React.FC<SoundManagerProps> = ({
     setSelectedFilter('project');
   };
 
+  // Add a brand new Global Library sound directly targeting sounds/compartidos/ (Admin only)
+  const handleCreateNewGlobalSound = () => {
+    if (!isAdmin) return;
+    const randomId = `global_${Date.now().toString().slice(-4)}`;
+    const newSound: SoundDefinition = {
+      id: randomId,
+      name: 'Nuevo Sonido Global',
+      description: 'Efecto o pista compartida en la biblioteca oficial',
+      category: 'action',
+      sourceType: 'url',
+      url: '',
+      isGlobal: true,
+      synthConfig: {
+        oscType: 'sawtooth',
+        instrument: 'custom',
+        startFreq: 440,
+        endFreq: 220,
+        rampType: 'exponential',
+        duration: 0.25,
+        volume: 0.3,
+      },
+    };
+
+    setGlobalSounds((prev) => [...prev, newSound]);
+    handleSelectSound(newSound);
+    setSelectedFilter('global');
+  };
+
   // Duplicate an official library sound into current project for customization
   const handleDuplicateToProject = (sound: SoundDefinition, overrideTitle?: string) => {
     const trimmedTitle = (overrideTitle || projectNameInput || activeProjectTitle || 'Mi Proyecto de Aventuras').trim();
@@ -722,15 +760,63 @@ export const SoundManager: React.FC<SoundManagerProps> = ({
     setTimeout(() => setGlobalFeedback(null), 3000);
   };
 
-  // ADMIN ACTION: Save sound changes to Global Library (Firestore)
+  // ADMIN ACTION: Ensure audio lives in sounds/compartidos/ (Urdimbre_medios) and save to Global Library (Firestore)
   const handleAdminSaveToGlobalLibrary = async () => {
     if (!isAdmin || !activeSoundForm) return;
 
     setIsSavingGlobal(true);
     setGlobalFeedback(null);
     try {
+      let resolvedUrl = activeSoundForm.url?.trim() || '';
+      let migratedToRepoPath: string | null = null;
+
+      if (activeSoundForm.sourceType === 'url' && resolvedUrl) {
+        const repoPath = extractGitHubMediaRepoPath(resolvedUrl);
+        const alreadyInSharedFolder =
+          isGitHubMediaUrl(resolvedUrl) && Boolean(repoPath?.startsWith('sounds/compartidos/'));
+
+        if (!alreadyInSharedFolder) {
+          const mediaStatus = await getMediaServiceStatus(true);
+          if (!mediaStatus.configured) {
+            if (resolvedUrl.startsWith('data:')) {
+              throw new Error(
+                'El audio está incrustado en Base64 y requiere GITHUB_MEDIA_TOKEN configurado en el servidor para subirlo a sounds/compartidos/.'
+              );
+            }
+            throw new Error(
+              'Falta GITHUB_MEDIA_TOKEN en el servidor para copiar este audio a la carpeta sounds/compartidos/ de Urdimbre_medios.'
+            );
+          }
+
+          if (resolvedUrl.startsWith('data:')) {
+            const uploaded = await uploadBase64MediaToGitHub({
+              dataUrl: resolvedUrl,
+              kind: 'sounds',
+              projectSlug: 'compartidos',
+              preferredName: activeSoundForm.name || activeSoundForm.id,
+            });
+            resolvedUrl = uploaded.immediateUrl;
+            migratedToRepoPath = uploaded.path;
+          } else if (isExternalHttpUrl(resolvedUrl)) {
+            const sourceToMirror = isGitHubMediaUrl(resolvedUrl)
+              ? toImmediateMediaUrl(resolvedUrl)
+              : resolvedUrl;
+            const mirrored = await mirrorMediaUrlToGitHub({
+              sourceUrl: sourceToMirror,
+              kind: 'sounds',
+              projectSlug: 'compartidos',
+              preferredName: activeSoundForm.name || activeSoundForm.id,
+            });
+            resolvedUrl = mirrored.immediateUrl;
+            migratedToRepoPath = mirrored.path;
+          }
+        }
+      }
+
+      const { projectTitle: _unusedProjectTitle, ...restForm } = activeSoundForm;
       const targetSound: SoundDefinition = {
-        ...activeSoundForm,
+        ...restForm,
+        ...(activeSoundForm.sourceType === 'url' ? { url: resolvedUrl } : {}),
         isGlobal: true,
         updatedAt: new Date().toISOString(),
         updatedBy: currentUser?.email || 'Urdimbre',
@@ -744,12 +830,18 @@ export const SoundManager: React.FC<SoundManagerProps> = ({
 
       await saveGlobalSoundLibraryToFirestore(nextGlobalList, currentUser?.email || 'lavozdelosmuertos@gmail.com');
       setGlobalSounds(nextGlobalList);
-      setGlobalFeedback('¡Sonido guardado en la Biblioteca Global de la Plataforma para todos los usuarios!');
+      setActiveSoundForm(targetSound);
+      setSelectedSoundId(targetSound.id);
+      setGlobalFeedback(
+        migratedToRepoPath
+          ? `¡Audio copiado a ${migratedToRepoPath} y sonido guardado en la Biblioteca Global!`
+          : '¡Sonido guardado en la Biblioteca Global de la Plataforma para todos los usuarios!'
+      );
     } catch (e: any) {
-      alert('Error al guardar en Firestore: ' + (e?.message || e));
+      alert('Error al guardar en la Biblioteca Global: ' + (e?.message || e));
     } finally {
       setIsSavingGlobal(false);
-      setTimeout(() => setGlobalFeedback(null), 4000);
+      setTimeout(() => setGlobalFeedback(null), 5000);
     }
   };
 
@@ -902,11 +994,26 @@ export const SoundManager: React.FC<SoundManagerProps> = ({
 
             <button
               type="button"
-              onClick={handleCreateNewProjectSound}
+              onClick={handleCreateNewGlobalSound}
               className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              title="Crear un nuevo sonido global (los audios se guardan en sounds/compartidos/ de Urdimbre_medios)"
             >
               <Plus className="w-4 h-4" />
-              <span>Nuevo Sonido</span>
+              <span>Nuevo Sonido Global</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCreateNewProjectSound}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                isClean
+                  ? 'bg-[#F4EFE3] hover:bg-[#E5DCB8] text-[#2A2118] border-[#E5DCB8]'
+                  : 'bg-[#1F1913] hover:bg-[#382E25] text-amber-200 border-amber-500/30'
+              }`}
+              title="Crear un sonido personalizado solo para el proyecto actual"
+            >
+              <FolderPlus className="w-3.5 h-3.5 text-amber-500" />
+              <span>Nuevo en Proyecto</span>
             </button>
           </div>
         )}
@@ -1112,7 +1219,7 @@ export const SoundManager: React.FC<SoundManagerProps> = ({
 
                 return (
                   <div
-                    key={sound.id}
+                    key={`${sound.isGlobal ? 'global' : 'project'}_${sound.id}`}
                     onClick={() => {
                       handleSelectSound(sound);
                     }}
@@ -2015,10 +2122,10 @@ export const SoundManager: React.FC<SoundManagerProps> = ({
                       onClick={handleAdminSaveToGlobalLibrary}
                       disabled={isSavingGlobal}
                       className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition-all cursor-pointer disabled:opacity-60"
-                      title="Guardar y propagar cambios a toda la plataforma en Firestore"
+                      title="Aloja el audio en sounds/compartidos/ de Urdimbre_medios y guarda el sonido en la Biblioteca Global"
                     >
                       <Shield className="w-4 h-4" />
-                      <span>{isSavingGlobal ? 'Guardando en Firestore...' : 'Guardar en Biblioteca Global'}</span>
+                      <span>{isSavingGlobal ? 'Subiendo audio y guardando...' : 'Guardar en Biblioteca Global'}</span>
                     </button>
                   </div>
                 )}
