@@ -49,12 +49,23 @@ function getRepoConfig() {
 let cachedFirebaseConfig: FirebaseClientConfig | null = null;
 function getFirebaseConfig(): FirebaseClientConfig {
   if (cachedFirebaseConfig) return cachedFirebaseConfig;
-  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const candidatePaths = [
+
+  const candidatePaths: string[] = [
     path.join(process.cwd(), 'firebase-applet-config.json'),
-    path.resolve(moduleDir, '../firebase-applet-config.json'),
-    path.resolve(moduleDir, '../../firebase-applet-config.json'),
   ];
+
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.url) {
+      const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+      candidatePaths.push(
+        path.resolve(moduleDir, '../firebase-applet-config.json'),
+        path.resolve(moduleDir, '../../firebase-applet-config.json')
+      );
+    }
+  } catch {
+    // Ignore when bundled into CommonJS
+  }
+
   for (const cfgPath of candidatePaths) {
     try {
       if (fs.existsSync(cfgPath)) {
@@ -66,10 +77,14 @@ function getFirebaseConfig(): FirebaseClientConfig {
       // Try next candidate path
     }
   }
+
   cachedFirebaseConfig = {
-    apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY,
-    projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID,
-    firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID,
+    apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || 'AIzaSyDEVpXziuBFxnu6ZGhaLesnRXaJkjstrS4',
+    projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'youtube2next',
+    firestoreDatabaseId:
+      process.env.FIREBASE_DATABASE_ID ||
+      process.env.VITE_FIREBASE_DATABASE_ID ||
+      'ai-studio-motordeaventuras-6db161c5-340a-4759-aa6e-ee66855d7f92',
   };
   return cachedFirebaseConfig;
 }
