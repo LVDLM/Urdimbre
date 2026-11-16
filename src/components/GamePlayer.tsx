@@ -3,7 +3,7 @@ import { GameProject, Hotspot, VerbType, ActionRule, InventoryItem, SaveSlotData
 import { THEME_CONFIGS } from '../utils/themeStyles';
 import { renderTextWithLinks, isWordMatchInText } from '../utils/textUtils';
 import { ALL_VERBS, getProjectVerbs, renderVerbIcon } from '../utils/verbs';
-import { playSound, playBlockSound, playSceneSounds, setActiveProjectSounds, stopMusic } from '../utils/audio';
+import { playSound, playBlockSound, playSceneSounds, setActiveProjectSounds, stopAllAudio, stopMusic } from '../utils/audio';
 import { applyItemEffects, canAfford, deliveryKey, getGrants, getRemovals, isDelivered, missingItems } from '../utils/itemRules';
 import {
   Eye,
@@ -380,6 +380,13 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   useEffect(() => {
     setActiveProjectSounds(project.customSounds || []);
   }, [project.customSounds]);
+
+  // Detener música y efectos al salir o desmontar el reproductor (p. ej., al volver al editor)
+  useEffect(() => {
+    return () => {
+      stopAllAudio();
+    };
+  }, []);
 
   const playedBlockSoundIdsRef = useRef<Set<string>>(new Set());
   const lastAudioSceneIdRef = useRef<string | null>(null);

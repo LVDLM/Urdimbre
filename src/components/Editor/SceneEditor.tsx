@@ -48,6 +48,7 @@ import {
   Maximize2,
   Settings,
   Volume2,
+  VolumeX,
   Play,
   RotateCcw,
   MessageSquare,
@@ -162,8 +163,17 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
   // Live Scene Preview state inside editor
   const [isPreviewingActiveScene, setIsPreviewingActiveScene] = useState(false);
   const [testSceneGameState, setTestSceneGameState] = useState<any>(null);
+  const [testPreviewKey, setTestPreviewKey] = useState(0);
+
+  // Al salir del modo de prueba (volver a editar la escena), detener cualquier música o sonido activo
+  useEffect(() => {
+    if (!isPreviewingActiveScene) {
+      stopAllAudio();
+    }
+  }, [isPreviewingActiveScene]);
 
   const startTestingSceneWithId = (sceneId: string) => {
+    stopAllAudio();
     setSelectedSceneId(sceneId);
     setTestSceneGameState({
       currentSceneId: sceneId,
@@ -175,7 +185,13 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
       deliveredRuleKeys: [],
       difficulty: 'facil',
     });
+    setTestPreviewKey((k) => k + 1);
     setIsPreviewingActiveScene(true);
+  };
+
+  const stopTestingActiveScene = () => {
+    stopAllAudio();
+    setIsPreviewingActiveScene(false);
   };
 
   const startTestingActiveScene = () => {
@@ -1354,7 +1370,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
 
             <button
               type="button"
-              onClick={isPreviewingActiveScene ? () => setIsPreviewingActiveScene(false) : startTestingActiveScene}
+              onClick={isPreviewingActiveScene ? stopTestingActiveScene : startTestingActiveScene}
               className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow transition-all cursor-pointer border ${
                 isPreviewingActiveScene
                   ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-300'
@@ -1622,7 +1638,17 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => stopAllAudio()}
+                  className="px-3.5 py-2 bg-rose-950/80 hover:bg-rose-900/90 border border-rose-500/40 text-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                  title="Detener la música y los sonidos de prueba"
+                >
+                  <VolumeX className="w-3.5 h-3.5" />
+                  <span>Parar Audio</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={startTestingActiveScene}
@@ -1635,7 +1661,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
 
                 <button
                   type="button"
-                  onClick={() => setIsPreviewingActiveScene(false)}
+                  onClick={stopTestingActiveScene}
                   className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 shadow-lg"
                 >
                   <Edit3 className="w-4 h-4" />
@@ -1648,6 +1674,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
             {testSceneGameState && (
               <div className="rounded-2xl border border-white/10 overflow-hidden bg-black shadow-2xl">
                 <GamePlayer
+                  key={testPreviewKey}
                   project={project}
                   updateProject={updateProject}
                   gameState={testSceneGameState}
