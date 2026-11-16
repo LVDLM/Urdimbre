@@ -641,6 +641,13 @@ export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
                     </option>
                   ))}
                 </select>
+                {requiredItemId && (
+                  <p className="text-[10px] text-amber-300/80 mt-1 leading-snug">
+                    {verb === 'usar'
+                      ? 'El jugador deberá seleccionar este objeto en el inventario y usarlo sobre la palabra.'
+                      : 'Basta con que el jugador tenga este objeto en el inventario.'}
+                  </p>
+                )}
               </div>
             </div>
 

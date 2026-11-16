@@ -1635,8 +1635,14 @@ ${VOICE_ENGINE_EMBED}
       });
 
       const matchingRules = rulesForVerb.filter(function(a) {
-        if (a.requiredItemId && selectedInventoryItem !== a.requiredItemId && !gameState.inventory.includes(a.requiredItemId)) {
-          return false;
+        if (a.requiredItemId) {
+          if (verbToUse === 'usar') {
+            if (selectedInventoryItem !== a.requiredItemId) return false;
+          } else if (selectedInventoryItem) {
+            if (selectedInventoryItem !== a.requiredItemId) return false;
+          } else if (!gameState.inventory.includes(a.requiredItemId)) {
+            return false;
+          }
         }
         if (a.requiredFlags && !checkConditions(a.requiredFlags)) {
           return false;

@@ -1254,7 +1254,10 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     const matchingRules = rulesForVerb.filter((a) => {
       // Check required item
       if (a.requiredItemId) {
-        if (selectedInventoryItemId) {
+        if (verbToUse === 'usar') {
+          // Para el verbo "Usar", el jugador debe seleccionar explícitamente ese objeto del inventario y usarlo sobre la palabra
+          if (selectedInventoryItemId !== a.requiredItemId) return false;
+        } else if (selectedInventoryItemId) {
           if (selectedInventoryItemId !== a.requiredItemId) return false;
         } else {
           if (!gameState.inventory.includes(a.requiredItemId)) return false;
