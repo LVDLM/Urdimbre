@@ -29,6 +29,8 @@ export interface ThemeConfig {
   docTitleClass: string;
   docHintClass: string;
   docBodyClass: string;
+  revealHighlightClass: string;
+  themeButtonClass: string;
 }
 
 export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
@@ -61,6 +63,8 @@ export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
     docTitleClass: 'text-amber-300 font-mono font-bold text-sm sm:text-base tracking-wide flex items-center gap-2.5 min-w-0',
     docHintClass: 'text-[11px] font-mono uppercase tracking-wider text-amber-400/75 flex items-center gap-1.5 shrink-0',
     docBodyClass: 'px-4 sm:px-5 py-4 border-t border-amber-500/20 text-amber-50/95 space-y-3',
+    revealHighlightClass: 'ring-2 ring-amber-400/60 bg-amber-500/[0.09] shadow-[0_0_22px_rgba(245,158,11,0.16)]',
+    themeButtonClass: 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50',
   },
   'modern-dark': {
     id: 'modern-dark',
@@ -91,6 +95,8 @@ export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
     docTitleClass: 'text-amber-300 font-sans font-semibold text-sm sm:text-base tracking-tight flex items-center gap-2.5 min-w-0',
     docHintClass: 'text-xs font-sans text-slate-400 flex items-center gap-1.5 shrink-0',
     docBodyClass: 'px-4 sm:px-5 py-4 border-t border-white/10 text-slate-100/95 space-y-3',
+    revealHighlightClass: 'ring-2 ring-amber-400/55 bg-amber-500/[0.08] shadow-[0_0_22px_rgba(245,158,11,0.14)]',
+    themeButtonClass: 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 border border-amber-500/40',
   },
   'sepia-parchment': {
     id: 'sepia-parchment',
@@ -121,6 +127,8 @@ export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
     docTitleClass: 'text-[#6e2210] font-serif font-bold text-sm sm:text-base flex items-center gap-2.5 min-w-0',
     docHintClass: 'text-xs font-serif italic text-[#786146] flex items-center gap-1.5 shrink-0',
     docBodyClass: 'px-4 sm:px-5 py-4 border-t border-[#cbb382]/80 text-[#332516] font-serif space-y-3',
+    revealHighlightClass: 'ring-2 ring-[#822b16]/45 bg-[#822b16]/[0.07] shadow-[0_0_18px_rgba(130,43,22,0.12)]',
+    themeButtonClass: 'bg-[#822b16]/15 hover:bg-[#822b16]/25 text-[#822b16] border border-[#822b16]/40',
   },
   'cyber-terminal': {
     id: 'cyber-terminal',
@@ -151,6 +159,8 @@ export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
     docTitleClass: 'text-emerald-200 font-mono font-bold text-sm sm:text-base tracking-wider flex items-center gap-2.5 min-w-0',
     docHintClass: 'text-[11px] font-mono uppercase text-emerald-400/80 flex items-center gap-1.5 shrink-0',
     docBodyClass: 'px-4 sm:px-5 py-4 border-t border-emerald-500/30 text-emerald-200 font-mono space-y-3',
+    revealHighlightClass: 'ring-2 ring-emerald-400/70 bg-emerald-500/[0.10] shadow-[0_0_24px_rgba(16,185,129,0.20)]',
+    themeButtonClass: 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/60',
   },
   'emerald-vintage': {
     id: 'emerald-vintage',
@@ -181,5 +191,7 @@ export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
     docTitleClass: 'text-yellow-300 font-sans font-semibold text-sm sm:text-base flex items-center gap-2.5 min-w-0',
     docHintClass: 'text-xs font-sans text-emerald-300/75 flex items-center gap-1.5 shrink-0',
     docBodyClass: 'px-4 sm:px-5 py-4 border-t border-emerald-800/50 text-emerald-50/95 space-y-3',
+    revealHighlightClass: 'ring-2 ring-yellow-400/55 bg-emerald-500/[0.10] shadow-[0_0_22px_rgba(234,179,8,0.15)]',
+    themeButtonClass: 'bg-emerald-900/60 hover:bg-emerald-800/70 text-yellow-300 border border-emerald-700/60',
   },
 };

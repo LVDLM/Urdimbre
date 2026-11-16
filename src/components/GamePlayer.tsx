@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { GameProject, Hotspot, VerbType, ActionRule, InventoryItem, SaveSlotData, AppendedTextEntry, DialogueOption, DialogueBlock, GameCharacter, Scene } from '../types';
 import { THEME_CONFIGS } from '../utils/themeStyles';
 import { renderTextWithLinks, isWordMatchInText } from '../utils/textUtils';
@@ -376,6 +376,46 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [gameState.currentSceneId]);
 
+  // Detección de párrafos nuevos dentro de la misma escena (por flags, inventario o texto añadido),
+  // con animación de aparición diferida si hay un mensaje/entrega de objeto abierto y foco automático al nuevo contenido.
+  const [deferredRevealKeys, setDeferredRevealKeys] = useState<Set<string>>(() => new Set());
+  const [highlightedRevealKeys, setHighlightedRevealKeys] = useState<Set<string>>(() => new Set());
+  const [pendingScrollDomId, setPendingScrollDomId] = useState<string | null>(null);
+  const prevRevealSnapshotRef = useRef<{
+    projectId: string | null;
+    sceneId: string | null;
+    historyLen: number;
+    keys: Set<string>;
+  }>({
+    projectId: null,
+    sceneId: null,
+    historyLen: 0,
+    keys: new Set(),
+  });
+
+  const scrollToRevealedElement = (el: HTMLElement) => {
+    const container = narrativeRef.current;
+    const isContainerScrollable =
+      container &&
+      container.scrollHeight > container.clientHeight + 4 &&
+      ['auto', 'scroll'].includes(window.getComputedStyle(container).overflowY);
+
+    if (isContainerScrollable && container) {
+      const containerRect = container.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const targetTop = Math.max(0, container.scrollTop + (elRect.top - containerRect.top) - 24);
+      container.scrollTo({ top: targetTop, behavior: 'smooth' });
+      if (containerRect.top < 16 || containerRect.top > window.innerHeight * 0.6) {
+        container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    } else {
+      const elRect = el.getBoundingClientRect();
+      const desiredOffset = Math.min(140, Math.round(window.innerHeight * 0.2));
+      const targetY = Math.max(0, window.scrollY + elRect.top - desiredOffset);
+      window.scrollTo({ top: targetY, behavior: 'smooth' });
+    }
+  };
+
   // Fetch live accumulated rating for story
   useEffect(() => {
     if (project?.id) {
@@ -519,6 +559,150 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
     prevVisibleDocIdsRef.current = new Set(visibleDocIds);
   }, [project?.id, currentScene, gameState.flags, gameState.inventory, gameState.history?.length]);
+
+  useLayoutEffect(() => {
+    const projId = project?.id || null;
+    const sceneId = currentScene?.id || null;
+    const histLen = gameState.history?.length || 0;
+    const snap = prevRevealSnapshotRef.current;
+    const isSameScene =
+      snap.projectId === projId &&
+      snap.sceneId === sceneId &&
+      !(histLen === 0 && snap.historyLen > 0);
+
+    const sceneAppendedList = gameState.appendedTextsPerScene[gameState.currentSceneId] || [];
+    const blockAppendedMap: Record<string, string[]> = {};
+    const unattachedAppended: string[] = [];
+
+    sceneAppendedList.forEach((entry) => {
+      const txt = typeof entry === 'string' ? entry : entry.text;
+      const bId = typeof entry === 'string' ? undefined : entry.blockId;
+      if (bId) {
+        if (!blockAppendedMap[bId]) blockAppendedMap[bId] = [];
+        blockAppendedMap[bId].push(txt);
+      } else {
+        unattachedAppended.push(txt);
+      }
+    });
+
+    const currentRevealItems: { key: string; domId: string }[] = [];
+    if (currentScene) {
+      (currentScene.textBlocks || []).forEach((b) => {
+        if (b.visibleIfFlags && Object.entries(b.visibleIfFlags).some(([k, v]) => !!gameState.flags[k] !== v)) return;
+        if (b.hiddenIfFlags && Object.entries(b.hiddenIfFlags).some(([k, v]) => !!gameState.flags[k] === v)) return;
+        const reqItems = b.requiredItemIds || (b.requiredItemId ? [b.requiredItemId] : []);
+        if (reqItems.length > 0 && !reqItems.every((id) => gameState.inventory.includes(id))) return;
+
+        currentRevealItems.push({ key: `block:${b.id}`, domId: `block-${b.id}` });
+        const attached = blockAppendedMap[b.id] || [];
+        attached.forEach((_, i) => {
+          currentRevealItems.push({
+            key: `app:${b.id}:${i}`,
+            domId: `block-appended-${b.id}-${i}`,
+          });
+        });
+      });
+
+      unattachedAppended.forEach((_, i) => {
+        currentRevealItems.push({
+          key: `app:unattached:${i}`,
+          domId: `unattached-appended-${i}`,
+        });
+      });
+    }
+
+    const currentKeySet = new Set(currentRevealItems.map((it) => it.key));
+
+    if (!isSameScene) {
+      prevRevealSnapshotRef.current = {
+        projectId: projId,
+        sceneId,
+        historyLen: histLen,
+        keys: currentKeySet,
+      };
+      if (deferredRevealKeys.size > 0) setDeferredRevealKeys(new Set());
+      if (highlightedRevealKeys.size > 0) setHighlightedRevealKeys(new Set());
+      setPendingScrollDomId(null);
+      return;
+    }
+
+    const newlyAdded = currentRevealItems.filter((it) => !snap.keys.has(it.key));
+    prevRevealSnapshotRef.current = {
+      projectId: projId,
+      sceneId,
+      historyLen: histLen,
+      keys: currentKeySet,
+    };
+
+    const hasBlockingModal = !!(modalFeedback || modalQueue.length > 0 || activeDialogue);
+
+    if (hasBlockingModal) {
+      if (newlyAdded.length > 0) {
+        setDeferredRevealKeys((prev) => {
+          const next = new Set(prev);
+          newlyAdded.forEach((it) => next.add(it.key));
+          return next;
+        });
+      }
+      return;
+    }
+
+    const readyKeys = new Set<string>(deferredRevealKeys);
+    newlyAdded.forEach((it) => readyKeys.add(it.key));
+
+    if (readyKeys.size > 0) {
+      if (deferredRevealKeys.size > 0) {
+        setDeferredRevealKeys(new Set());
+      }
+      setHighlightedRevealKeys((prev) => {
+        const next = new Set(prev);
+        readyKeys.forEach((k) => next.add(k));
+        return next;
+      });
+      const firstReady = currentRevealItems.find((it) => readyKeys.has(it.key));
+      if (firstReady) {
+        setPendingScrollDomId(firstReady.domId);
+      }
+    }
+  }, [
+    project?.id,
+    currentScene,
+    gameState.currentSceneId,
+    gameState.flags,
+    gameState.inventory,
+    gameState.appendedTextsPerScene,
+    gameState.history?.length,
+    modalFeedback,
+    modalQueue.length,
+    activeDialogue,
+  ]);
+
+  useEffect(() => {
+    if (highlightedRevealKeys.size === 0) return;
+    const timer = setTimeout(() => {
+      setHighlightedRevealKeys(new Set());
+    }, 1800);
+    return () => clearTimeout(timer);
+  }, [highlightedRevealKeys]);
+
+  useEffect(() => {
+    if (!pendingScrollDomId) return;
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const el = document.getElementById(pendingScrollDomId);
+        if (el) {
+          scrollToRevealedElement(el);
+        }
+        setPendingScrollDomId(null);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [pendingScrollDomId]);
 
   useEffect(() => {
     if (qteStatus !== 'active' || !currentScene?.qteConfig) return;
@@ -2109,14 +2293,14 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
             {/* Mobile Top Minimal Bar - Shown ONLY on Portada (Cover scene) */}
             {isPortada && (
               <div className={`md:hidden flex items-center justify-between gap-2 p-2.5 rounded-2xl mb-2 shadow-lg border ${themeConfig.buttonBgClass} ${themeConfig.buttonBorderClass}`}>
-                {/* Visual Style Selector Button (Tema) matching user mockup */}
+                {/* Visual Style Selector Button (Tema) integrated with active theme */}
                 <div className="relative flex items-center shrink-0">
                   <div
-                    className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ${themeConfig.themeButtonClass}`}
                   >
-                    <Palette className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                    <Palette className={`w-3.5 h-3.5 ${themeConfig.accentClass} shrink-0`} />
                     <span>Tema</span>
-                    <ChevronDown className="w-3 h-3 text-emerald-200 ml-0.5 opacity-80" />
+                    <ChevronDown className="w-3 h-3 ml-0.5 opacity-75 shrink-0" />
                   </div>
                   <select
                     value={currentTheme}
@@ -2358,13 +2542,13 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                   Cancelar
                 </button>
               )}
-              {/* Ayuda visual: resalta las palabras interactivas en cualquier dificultad */}
+              {/* Ayuda visual (solo móvil): resalta las palabras interactivas cuando no está el selector de dificultad */}
               <button
                 onClick={toggleAsistirResaltado}
                 aria-pressed={asistirResaltado}
                 aria-label="Resaltar palabras interactivas"
                 title={asistirResaltado ? 'Resaltado de palabras activado' : 'Resaltar palabras interactivas'}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer touch-manipulation ${
+                className={`flex md:hidden items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer touch-manipulation ${
                   asistirResaltado
                     ? `${themeConfig.verbActiveBg} ${themeConfig.verbActiveText} border-amber-400`
                     : `${themeConfig.buttonBgClass} ${themeConfig.buttonBorderClass} ${themeConfig.buttonTextClass} ${themeConfig.buttonHoverClass}`
@@ -2464,6 +2648,26 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                 }
               });
 
+              const hasBlockingModal = !!(modalFeedback || modalQueue.length > 0 || activeDialogue);
+              const snap = prevRevealSnapshotRef.current;
+              const isSameSceneContext =
+                snap.projectId === (project?.id || null) &&
+                snap.sceneId === (currentScene?.id || null) &&
+                !((gameState.history?.length || 0) === 0 && snap.historyLen > 0);
+
+              const getRevealState = (revealKey: string) => {
+                const justAppearedNow = isSameSceneContext && !snap.keys.has(revealKey);
+                const isPendingReveal =
+                  deferredRevealKeys.has(revealKey) || (justAppearedNow && hasBlockingModal);
+                const shouldAnimateAppear =
+                  !isPendingReveal &&
+                  (justAppearedNow ||
+                    highlightedRevealKeys.has(revealKey) ||
+                    deferredRevealKeys.has(revealKey));
+                const isHighlighted = !isPendingReveal && highlightedRevealKeys.has(revealKey);
+                return { justAppearedNow, isPendingReveal, shouldAnimateAppear, isHighlighted };
+              };
+
               return (
                 <>
                   {currentScene?.textBlocks.map((block, index) => {
@@ -2483,13 +2687,27 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                     const isDocumento = block.type === 'documento';
                     const isDocExpanded = isDocumento ? (expandedDocBlocks[block.id] ?? true) : true;
                     const docTitle = block.documentTitle?.trim() || 'Documento citado';
+                    const blockReveal = getRevealState(`block:${block.id}`);
 
                     return (
                       <React.Fragment key={block.id}>
                         {isDocumento ? (
-                          <div
+                          <motion.div
                             id={`block-${block.id}`}
-                            className={`tracking-wide ${themeConfig.docContainerClass}`}
+                            initial={
+                              blockReveal.isPendingReveal || blockReveal.shouldAnimateAppear
+                                ? { opacity: 0, y: 12 }
+                                : false
+                            }
+                            animate={
+                              blockReveal.isPendingReveal
+                                ? { opacity: 0, y: 12 }
+                                : { opacity: 1, y: 0 }
+                            }
+                            transition={{ duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
+                            className={`tracking-wide transition-all duration-700 ${themeConfig.docContainerClass} ${
+                              blockReveal.isHighlighted ? themeConfig.revealHighlightClass : ''
+                            }`}
                           >
                             <button
                               type="button"
@@ -2528,11 +2746,24 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                                 {hasText && renderTextWithTags(block.text, block.isGameOver, isFinal)}
                               </div>
                             )}
-                          </div>
+                          </motion.div>
                         ) : (
-                          <div
+                          <motion.div
                             id={`block-${block.id}`}
-                            className="tracking-wide space-y-3 transition-all"
+                            initial={
+                              blockReveal.isPendingReveal || blockReveal.shouldAnimateAppear
+                                ? { opacity: 0, y: 12 }
+                                : false
+                            }
+                            animate={
+                              blockReveal.isPendingReveal
+                                ? { opacity: 0, y: 12 }
+                                : { opacity: 1, y: 0 }
+                            }
+                            transition={{ duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
+                            className={`tracking-wide space-y-3 rounded-xl transition-all duration-700 ${
+                              blockReveal.isHighlighted ? themeConfig.revealHighlightClass : ''
+                            }`}
                           >
                             {blockImg && (
                               <div className="w-full text-center my-3">
@@ -2549,35 +2780,65 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                             )}
 
                             {hasText && renderTextWithTags(block.text, block.isGameOver, isFinal)}
-                          </div>
+                          </motion.div>
                         )}
 
                         {/* Appended Story Paragraphs attached to THIS block */}
-                        {attachedTexts.map((appended, i) => (
-                          <motion.div
-                            initial={{ opacity: 0, y: 5 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            key={`block-appended-${block.id}-${i}`}
-                            className="tracking-wide"
-                          >
-                            {renderTextWithTags(appended)}
-                          </motion.div>
-                        ))}
+                        {attachedTexts.map((appended, i) => {
+                          const appReveal = getRevealState(`app:${block.id}:${i}`);
+                          return (
+                            <motion.div
+                              id={`block-appended-${block.id}-${i}`}
+                              initial={
+                                appReveal.isPendingReveal || appReveal.shouldAnimateAppear
+                                  ? { opacity: 0, y: 12 }
+                                  : false
+                              }
+                              animate={
+                                appReveal.isPendingReveal
+                                  ? { opacity: 0, y: 12 }
+                                  : { opacity: 1, y: 0 }
+                              }
+                              transition={{ duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
+                              key={`block-appended-${block.id}-${i}`}
+                              className={`tracking-wide rounded-xl transition-all duration-700 ${
+                                appReveal.isHighlighted ? themeConfig.revealHighlightClass : ''
+                              }`}
+                            >
+                              {renderTextWithTags(appended)}
+                            </motion.div>
+                          );
+                        })}
                       </React.Fragment>
                     );
                   })}
 
                   {/* Unattached Appended Story Paragraphs */}
-                  {unattachedAppended.map((appended, i) => (
-                    <motion.div
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      key={`unattached-appended-${i}`}
-                      className="tracking-wide"
-                    >
-                      {renderTextWithTags(appended)}
-                    </motion.div>
-                  ))}
+                  {unattachedAppended.map((appended, i) => {
+                    const appReveal = getRevealState(`app:unattached:${i}`);
+                    return (
+                      <motion.div
+                        id={`unattached-appended-${i}`}
+                        initial={
+                          appReveal.isPendingReveal || appReveal.shouldAnimateAppear
+                            ? { opacity: 0, y: 12 }
+                            : false
+                        }
+                        animate={
+                          appReveal.isPendingReveal
+                            ? { opacity: 0, y: 12 }
+                            : { opacity: 1, y: 0 }
+                        }
+                        transition={{ duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
+                        key={`unattached-appended-${i}`}
+                        className={`tracking-wide rounded-xl transition-all duration-700 ${
+                          appReveal.isHighlighted ? themeConfig.revealHighlightClass : ''
+                        }`}
+                      >
+                        {renderTextWithTags(appended)}
+                      </motion.div>
+                    );
+                  })}
                 </>
               );
             })()}

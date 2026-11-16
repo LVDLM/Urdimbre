@@ -155,6 +155,27 @@ export function generateStandaloneHTML(project: GameProject, isForZip: boolean =
       border-top: 1px solid rgba(234, 179, 8, 0.22);
     }
 
+    @keyframes paragraphReveal {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .pending-reveal {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    .newly-revealed {
+      animation: paragraphReveal 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.45), 0 0 22px rgba(234, 179, 8, 0.16);
+      border-radius: 10px;
+      transition: box-shadow 0.7s ease, background-color 0.7s ease;
+      background-color: rgba(234, 179, 8, 0.06);
+    }
+    .reveal-settled {
+      box-shadow: none;
+      background-color: transparent;
+      transition: box-shadow 0.7s ease, background-color 0.7s ease;
+    }
+
     .hotspot {
       color: var(--accent);
       font-weight: 700;
@@ -480,6 +501,39 @@ ${jsonProject}
     let expandedDocBlocks = {};
     let prevVisibleDocIds = new Set();
     let prevDocSceneId = null;
+    let prevVisibleRevealKeys = new Set();
+    let prevRevealSceneId = null;
+    let deferredRevealDomIds = [];
+
+    function scrollToRevealedHtmlEl(el) {
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const desiredOffset = Math.min(140, Math.round(window.innerHeight * 0.2));
+      const targetY = Math.max(0, window.scrollY + rect.top - desiredOffset);
+      window.scrollTo({ top: targetY, behavior: 'smooth' });
+    }
+
+    function triggerHtmlReveal(domIds) {
+      if (!domIds || domIds.length === 0) return;
+      requestAnimationFrame(function() {
+        var firstEl = null;
+        domIds.forEach(function(domId) {
+          var el = document.getElementById(domId);
+          if (!el) return;
+          if (!firstEl) firstEl = el;
+          el.classList.remove('pending-reveal', 'reveal-settled');
+          void el.offsetWidth;
+          el.classList.add('newly-revealed');
+          setTimeout(function() {
+            el.classList.add('reveal-settled');
+            setTimeout(function() {
+              el.classList.remove('newly-revealed', 'reveal-settled');
+            }, 750);
+          }, 1700);
+        });
+        if (firstEl) scrollToRevealedHtmlEl(firstEl);
+      });
+    }
 
     window.toggleDocBlock = function(blockId) {
       const current = expandedDocBlocks[blockId] !== undefined ? expandedDocBlocks[blockId] : true;
@@ -1004,6 +1058,14 @@ ${VOICE_ENGINE_EMBED}
       });
       prevVisibleDocIds = currentVisibleDocIds;
 
+      // Track visible paragraph keys for mid-scene appear animations & focus scroll
+      const isSameRevealScene = prevRevealSceneId === scene.id;
+      prevRevealSceneId = scene.id;
+      const currentRevealKeys = new Set();
+      const newlyRevealedDomIds = [];
+      const popupModalEl = document.getElementById('popup-modal');
+      const isModalBlocking = !!(popupModalEl && popupModalEl.style.display && popupModalEl.style.display !== 'none');
+
       // Text blocks
       (scene.textBlocks || []).forEach((block, bIdx) => {
         const reqItems = block.requiredItemIds || (block.requiredItemId ? [block.requiredItemId] : []);
@@ -1012,11 +1074,17 @@ ${VOICE_ENGINE_EMBED}
           const imgSrc = getImageSrc(block);
           const isPortada = block.type === 'portada' || scene.type === 'portada';
           const hasText = !!(block.text && block.text.trim().length > 0);
+          const blockDomId = 'block-' + block.id;
+          const blockKey = 'block:' + block.id;
+          currentRevealKeys.add(blockKey);
+          const isNewBlock = isSameRevealScene && !prevVisibleRevealKeys.has(blockKey);
+          const isPendingBlock = isNewBlock && isModalBlocking;
+          if (isNewBlock) newlyRevealedDomIds.push(blockDomId);
 
           if (block.type === 'documento') {
             const docTitle = (block.documentTitle && block.documentTitle.trim()) ? block.documentTitle.trim() : 'Documento citado';
             const isDocExpanded = expandedDocBlocks[block.id] !== undefined ? expandedDocBlocks[block.id] : true;
-            combinedHTML += '<div id="block-' + block.id + '" class="doc-block">';
+            combinedHTML += '<div id="' + blockDomId + '" class="doc-block' + (isPendingBlock ? ' pending-reveal' : '') + '">';
             combinedHTML += '<button type="button" class="doc-header" onclick="window.toggleDocBlock(\\\'' + escapeHTML(block.id) + '\\\')">' +
               '<span>📄 ' + escapeHTML(docTitle) + '</span>' +
               '<span class="doc-hint">' + (isDocExpanded ? '▲ Replegar' : '▼ Leer') + '</span>' +
@@ -1033,7 +1101,7 @@ ${VOICE_ENGINE_EMBED}
             }
             combinedHTML += '</div>';
           } else {
-            combinedHTML += '<div id="block-' + block.id + '" style="margin-bottom: 1.25rem;">';
+            combinedHTML += '<div id="' + blockDomId + '"' + (isPendingBlock ? ' class="pending-reveal"' : '') + ' style="margin-bottom: 1.25rem;">';
 
             if (imgSrc) {
               if (isPortada) {
@@ -1052,22 +1120,46 @@ ${VOICE_ENGINE_EMBED}
 
           // Render appended texts belonging to this block
           const attached = blockAppended[block.id] || [];
-          attached.forEach(function(t) {
-            combinedHTML += '<p style="margin-bottom: 1rem; color: #fef08a;">' + renderTextBlock(t, scene) + '</p>';
+          attached.forEach(function(t, aIdx) {
+            const appDomId = 'block-appended-' + block.id + '-' + aIdx;
+            const appKey = 'app:' + block.id + ':' + aIdx;
+            currentRevealKeys.add(appKey);
+            const isNewApp = isSameRevealScene && !prevVisibleRevealKeys.has(appKey);
+            const isPendingApp = isNewApp && isModalBlocking;
+            if (isNewApp) newlyRevealedDomIds.push(appDomId);
+            combinedHTML += '<p id="' + appDomId + '"' + (isPendingApp ? ' class="pending-reveal"' : '') + ' style="margin-bottom: 1rem; color: #fef08a;">' + renderTextBlock(t, scene) + '</p>';
           });
         }
       });
 
       // Unattached appended texts for scene
-      unattachedAppended.forEach(function(t) {
-        combinedHTML += '<p style="margin-bottom: 1rem; color: #fef08a;">' + renderTextBlock(t, scene) + '</p>';
+      unattachedAppended.forEach(function(t, uIdx) {
+        const uDomId = 'unattached-appended-' + uIdx;
+        const uKey = 'app:unattached:' + uIdx;
+        currentRevealKeys.add(uKey);
+        const isNewU = isSameRevealScene && !prevVisibleRevealKeys.has(uKey);
+        const isPendingU = isNewU && isModalBlocking;
+        if (isNewU) newlyRevealedDomIds.push(uDomId);
+        combinedHTML += '<p id="' + uDomId + '"' + (isPendingU ? ' class="pending-reveal"' : '') + ' style="margin-bottom: 1rem; color: #fef08a;">' + renderTextBlock(t, scene) + '</p>';
       });
+
+      prevVisibleRevealKeys = currentRevealKeys;
 
       if (!combinedHTML) {
         combinedHTML = '<p style="color: #94a3b8; font-style: italic;">No hay texto disponible para mostrar en esta escena.</p>';
       }
 
       if (storyCard) storyCard.innerHTML = combinedHTML;
+
+      if (!isSameRevealScene) {
+        deferredRevealDomIds = [];
+      } else if (newlyRevealedDomIds.length > 0) {
+        if (isModalBlocking) {
+          deferredRevealDomIds = deferredRevealDomIds.concat(newlyRevealedDomIds);
+        } else {
+          triggerHtmlReveal(newlyRevealedDomIds);
+        }
+      }
       renderInventory();
       updateSentenceBar();
 
@@ -1125,6 +1217,11 @@ ${VOICE_ENGINE_EMBED}
     function closePopupModal() {
       const modal = document.getElementById('popup-modal');
       if (modal) modal.style.display = 'none';
+      if (deferredRevealDomIds && deferredRevealDomIds.length > 0) {
+        const pending = deferredRevealDomIds.slice();
+        deferredRevealDomIds = [];
+        triggerHtmlReveal(pending);
+      }
     }
 
     function formatTextWithLinks(str) {
@@ -1836,6 +1933,9 @@ ${VOICE_ENGINE_EMBED}
           expandedDocBlocks = {};
           prevVisibleDocIds = new Set();
           prevDocSceneId = null;
+          prevVisibleRevealKeys = new Set();
+          prevRevealSceneId = null;
+          deferredRevealDomIds = [];
           lastRenderedSceneId = null;
           render();
         } else {
@@ -1866,6 +1966,9 @@ ${VOICE_ENGINE_EMBED}
         expandedDocBlocks = {};
         prevVisibleDocIds = new Set();
         prevDocSceneId = null;
+        prevVisibleRevealKeys = new Set();
+        prevRevealSceneId = null;
+        deferredRevealDomIds = [];
         lastRenderedSceneId = null;
         render();
       }
