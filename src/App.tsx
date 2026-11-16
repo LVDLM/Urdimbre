@@ -499,6 +499,10 @@ export default function App() {
             gameState={gameState}
             setGameState={setGameState}
             onReset={handleResetGame}
+            onExit={() => {
+              setIsHeaderCollapsed(false);
+              setCurrentView('catalog');
+            }}
             onOpenSaveLoad={() => setShowSaveLoad(true)}
             isHeaderCollapsed={isHeaderCollapsed}
             setIsHeaderCollapsed={setIsHeaderCollapsed}

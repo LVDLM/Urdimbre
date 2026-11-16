@@ -40,6 +40,7 @@ import {
   Palette,
   Highlighter,
   FileText,
+  LogOut,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { StarRatingDisplay, StoryRatingWidget } from './common/StarRating';
@@ -57,10 +58,14 @@ interface GamePlayerProps {
     history: { id: string; type: 'story' | 'response' | 'system'; text: string }[];
     usedHotspotIds?: string[];
     deliveredRuleKeys?: string[]; // Fuentes de entrega de escena que ya entregaron sus objetos
+    verbUseCounts?: Record<string, number>;
+    usedDialogueOptionIds?: string[];
     difficulty?: 'facil' | 'normal' | 'dificil';
+    isGameOver?: boolean;
   };
   setGameState: React.Dispatch<React.SetStateAction<any>>;
   onReset: () => void;
+  onExit?: () => void;
   onOpenSaveLoad?: () => void;
   isHeaderCollapsed?: boolean;
   setIsHeaderCollapsed?: (collapsed: boolean) => void;
@@ -158,6 +163,51 @@ const isItemNeededInScene = (item: InventoryItem, scene?: Scene): boolean => {
   return false;
 };
 
+const GAME_OVER_TAG_REGEX = /\[(?:Terminar \/ Cargar partida|Terminar|Cargar partida|Fin de partida)\]/i;
+
+const cloneGameState = <T,>(st: T): T => {
+  if (!st) return st;
+  try {
+    return JSON.parse(JSON.stringify(st));
+  } catch {
+    return { ...st };
+  }
+};
+
+const isStateGameOverOrEnding = (
+  scene: Scene | undefined,
+  flags: Record<string, boolean>,
+  inventory: string[],
+  sceneAppended: (AppendedTextEntry | string)[] | undefined,
+  isGameOverFlag?: boolean
+): boolean => {
+  if (isGameOverFlag) return true;
+  if (!scene) return false;
+  if (scene.type === 'final') return true;
+  const hasBlockEnd = (scene.textBlocks || []).some((b) => {
+    if (b.visibleIfFlags) {
+      for (const [k, v] of Object.entries(b.visibleIfFlags)) {
+        if (!!flags[k] !== !!v) return false;
+      }
+    }
+    if (b.hiddenIfFlags) {
+      for (const [k, v] of Object.entries(b.hiddenIfFlags)) {
+        if (!!flags[k] === !!v) return false;
+      }
+    }
+    const reqItems = b.requiredItemIds || (b.requiredItemId ? [b.requiredItemId] : []);
+    if (reqItems.length > 0 && !reqItems.every((id) => inventory.includes(id))) {
+      return false;
+    }
+    return b.isGameOver || b.type === 'final' || GAME_OVER_TAG_REGEX.test(b.text || '');
+  });
+  if (hasBlockEnd) return true;
+  return (sceneAppended || []).some((t) => {
+    const textVal = typeof t === 'string' ? t : t.text;
+    return GAME_OVER_TAG_REGEX.test(textVal || '');
+  });
+};
+
 // Filter progressive text for QTE scenes: [1] appears after action 1, [2] after action 2, etc.
 // Preserves the author's original whitespace and inline flow without forcing newline breaks.
 const filterQTEProgressiveText = (rawText: string, stepIndex: number, isFinished: boolean): string => {
@@ -194,6 +244,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   gameState,
   setGameState,
   onReset,
+  onExit,
   onOpenSaveLoad,
   isHeaderCollapsed: propIsHeaderCollapsed,
   setIsHeaderCollapsed: propSetIsHeaderCollapsed,
@@ -209,6 +260,10 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   const [activeVerb, setActiveVerb] = useState<VerbType | null>(null);
   const [selectedInventoryItemId, setSelectedInventoryItemId] = useState<string | null>(null);
   const [showSaveNotification, setShowSaveNotification] = useState(false);
+  const [retryToast, setRetryToast] = useState<string | null>(null);
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const safeCheckpointRef = useRef<any>(null);
+  const checkpointProjectIdRef = useRef<string | null>(null);
   const [modalFeedback, setModalFeedback] = useState<{
     type: 'action' | 'item' | 'gameover';
     title?: string;
@@ -727,18 +782,22 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     const config = currentScene?.qteConfig;
     const failMsg = reasonMsg || config?.onFailMessage || '¡No lograste reaccionar a tiempo!';
 
-    if (config?.onFailFlag) {
+    if (config?.onFailFlag || config?.isFailGameOver) {
       setGameState((prev: any) => ({
         ...prev,
-        flags: {
-          ...prev.flags,
-          [config.onFailFlag!]: true,
-        },
+        ...(config?.onFailFlag
+          ? {
+              flags: {
+                ...prev.flags,
+                [config.onFailFlag]: true,
+              },
+            }
+          : {}),
+        ...(config?.isFailGameOver ? { isGameOver: true } : {}),
       }));
     }
 
     if (config?.isFailGameOver) {
-      setGameState((prev: any) => ({ ...prev, isGameOver: true }));
       setModalFeedback({
         type: 'gameover',
         title: 'Fin de partida',
@@ -871,25 +930,120 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     return true;
   };
 
-  const isSceneGameOver =
-    !!gameState.isGameOver ||
-    (currentScene?.textBlocks || []).some((b) => {
-      if (!checkConditions(b.visibleIfFlags, b.hiddenIfFlags)) return false;
-      const reqItems = b.requiredItemIds || (b.requiredItemId ? [b.requiredItemId] : []);
-      if (reqItems.length > 0 && !reqItems.every((id) => gameState.inventory.includes(id))) {
-        return false;
+  const isSceneGameOver = isStateGameOverOrEnding(
+    currentScene,
+    gameState.flags || {},
+    gameState.inventory || [],
+    currentScene ? gameState.appendedTextsPerScene?.[currentScene.id] : undefined,
+    gameState.isGameOver
+  );
+
+  // Guardar punto seguro previo a cualquier muerte o final para permitir "Reintentar"
+  useEffect(() => {
+    if (checkpointProjectIdRef.current !== project.id) {
+      checkpointProjectIdRef.current = project.id;
+      safeCheckpointRef.current = null;
+    }
+    if (!isSceneGameOver && !modalFeedback?.isGameOver && currentScene) {
+      safeCheckpointRef.current = cloneGameState(gameState);
+    }
+  }, [
+    project.id,
+    currentScene,
+    isSceneGameOver,
+    modalFeedback?.isGameOver,
+    gameState.currentSceneId,
+    gameState.inventory,
+    gameState.flags,
+    gameState.appendedTextsPerScene,
+    gameState.usedHotspotIds,
+    gameState.deliveredRuleKeys,
+    gameState.history?.length,
+    gameState.difficulty,
+    gameState.isGameOver,
+  ]);
+
+  const handleRetryBeforeDeath = () => {
+    playSound('select');
+    setActiveVerb(null);
+    setSelectedInventoryItemId(null);
+    setContextMenu(null);
+    setActiveDialogue(null);
+    setModalFeedback(null);
+    setModalQueue([]);
+    setQteMistakeMsg(null);
+
+    const checkpoint = safeCheckpointRef.current;
+    if (checkpoint) {
+      const restored = cloneGameState(checkpoint);
+      restored.isGameOver = false;
+      const sameScene = restored.currentSceneId === gameState.currentSceneId;
+      setGameState(restored);
+
+      if (sameScene && currentScene && (currentScene.type === 'qte' || currentScene.qteConfig) && currentScene.qteConfig?.sequence?.length) {
+        setQteTimeLeft(currentScene.qteConfig.timeLimitSeconds || 10);
+        setQteStepIndex(0);
+        setQteStatus('active');
       }
-      return (
-        b.isGameOver ||
-        b.type === 'final' ||
-        /\[(?:Terminar \/ Cargar partida|Terminar|Cargar partida|Fin de partida)\]/i.test(b.text)
-      );
-    }) ||
-    currentScene?.type === 'final' ||
-    ((currentScene && gameState.appendedTextsPerScene[currentScene.id]) || []).some((t) => {
-      const textVal = typeof t === 'string' ? t : t.text;
-      return /\[(?:Terminar \/ Cargar partida|Terminar|Cargar partida|Fin de partida)\]/i.test(textVal);
-    });
+
+      setRetryToast('Has vuelto a la escena anterior');
+      setTimeout(() => setRetryToast(null), 2600);
+      return;
+    }
+
+    if (!isSceneTesting) {
+      try {
+        const autosaveStr = localStorage.getItem(`text_adventure_save_slot_${project.id}_autosave`);
+        if (autosaveStr) {
+          const slot = JSON.parse(autosaveStr) as SaveSlotData;
+          const targetScene = project.scenes.find((s) => s.id === slot.currentSceneId);
+          if (
+            targetScene &&
+            !isStateGameOverOrEnding(
+              targetScene,
+              slot.flags || {},
+              slot.inventoryItemIds || [],
+              slot.appendedTextsPerScene?.[slot.currentSceneId],
+              false
+            )
+          ) {
+            setGameState({
+              currentSceneId: slot.currentSceneId,
+              inventory: slot.inventoryItemIds || [],
+              flags: slot.flags || {},
+              history: slot.narrativeHistory || [],
+              appendedTextsPerScene: slot.appendedTextsPerScene || {},
+              usedHotspotIds: slot.usedHotspotIds || [],
+              deliveredRuleKeys: slot.deliveredRuleKeys || [],
+              difficulty: slot.difficulty || 'facil',
+              isGameOver: false,
+            });
+            setRetryToast('Autoguardado anterior restaurado');
+            setTimeout(() => setRetryToast(null), 2600);
+            return;
+          }
+        }
+      } catch {
+        // Sin autoguardado válido disponible
+      }
+    }
+
+    onReset();
+  };
+
+  const handleConfirmExitGame = () => {
+    setShowExitConfirmModal(false);
+    setModalFeedback(null);
+    setModalQueue([]);
+    setActiveDialogue(null);
+    setContextMenu(null);
+    stopAllAudio();
+    if (onExit) {
+      onExit();
+    } else {
+      onReset();
+    }
+  };
 
   const isGoodEndingReached =
     !isSceneTesting &&
@@ -959,6 +1113,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
       if (rule && flagsMatch && comboAffordable) {
         const sc = rule.stateChange;
+        const isGameOverCombo = !!rule.isGameOver || !!sc?.isGameOver;
         const soundToPlay = rule.soundEffect || 'pickup';
         playSound(soundToPlay, project.customSounds);
 
@@ -988,13 +1143,12 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
             flags: newFlags,
             inventory: newInventory,
             currentSceneId: nextSceneId,
+            isGameOver: prev.isGameOver || isGameOverCombo,
           };
         });
 
         setSelectedInventoryItemId(null);
         setActiveVerb(null);
-
-        const isGameOverCombo = !!rule.isGameOver || !!sc?.isGameOver;
 
         setModalFeedback({
           type: isGameOverCombo ? 'gameover' : 'item',
@@ -1104,6 +1258,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
     // Effect conditions met!
     const sc = rule.stateChange;
+    const isGameOverUse = !!rule.isGameOver || !!sc?.isGameOver;
     const soundToPlay = rule.soundEffect || 'pickup';
     playSound(soundToPlay, project.customSounds);
 
@@ -1140,12 +1295,12 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         nextSceneId = sc.goToSceneId;
       }
 
-      let newAppendedStoryTexts = { ...prev.appendedStoryTexts };
+      let newAppended = { ...(prev.appendedTextsPerScene || {}) };
       if (sc?.appendStoryText && nextSceneId) {
-        const currentList = newAppendedStoryTexts[nextSceneId] || [];
+        const currentList = newAppended[nextSceneId] || [];
         if (!currentList.some((t: any) => (typeof t === 'string' ? t : t.text) === sc.appendStoryText)) {
-          newAppendedStoryTexts = {
-            ...newAppendedStoryTexts,
+          newAppended = {
+            ...newAppended,
             [nextSceneId]: [...currentList, { text: sc.appendStoryText }],
           };
         }
@@ -1156,14 +1311,13 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         flags: newFlags,
         inventory: newInventory,
         currentSceneId: nextSceneId,
-        appendedStoryTexts: newAppendedStoryTexts,
+        appendedTextsPerScene: newAppended,
+        isGameOver: prev.isGameOver || isGameOverUse,
       };
     });
 
     setSelectedInventoryItemId(null);
     setActiveVerb(null);
-
-    const isGameOverUse = !!rule.isGameOver || !!sc?.isGameOver;
 
     setModalFeedback({
       type: isGameOverUse ? 'gameover' : 'item',
@@ -1435,8 +1589,26 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
       }
 
       const willPickupItem = hasItemGains && !alreadyDelivered;
-      const isAutosaveTriggered = willPickupItem || !!sc?.goToSceneId;
-      const isRuleGameOver = !!rule.isGameOver || !!rule.stateChange?.isGameOver || /\[Terminar|\[Cargar partida|\[Fin de partida\]/i.test(rule.responseMessage || '');
+      const isRuleGameOver =
+        !!rule.isGameOver ||
+        !!rule.stateChange?.isGameOver ||
+        GAME_OVER_TAG_REGEX.test(rule.responseMessage || '') ||
+        GAME_OVER_TAG_REGEX.test(sc?.appendStoryText || '');
+      const predictedNextSceneId = sc?.goToSceneId || gameState.currentSceneId;
+      const predictedTargetScene = project.scenes.find((s) => s.id === predictedNextSceneId);
+      const predictedFlags = { ...gameState.flags, ...(sc?.setFlags || {}) };
+      const predictedInv = applyItemEffects([...gameState.inventory], gameState.deliveredRuleKeys, sc, ruleDeliveryKey).inventory;
+      const predictedAppended = sc?.appendStoryText && predictedNextSceneId === gameState.currentSceneId
+        ? [...(gameState.appendedTextsPerScene[gameState.currentSceneId] || []), { text: sc.appendStoryText }]
+        : (gameState.appendedTextsPerScene[predictedNextSceneId] || []);
+      const isPredictedTerminal = isStateGameOverOrEnding(
+        predictedTargetScene,
+        predictedFlags,
+        predictedInv,
+        predictedAppended,
+        !!gameState.isGameOver || isRuleGameOver
+      );
+      const isAutosaveTriggered = !isSceneTesting && !isPredictedTerminal && (willPickupItem || !!sc?.goToSceneId);
 
       setGameState((prev: any) => {
         const newFlags = { ...prev.flags, ...(sc?.setFlags || {}) };
@@ -1489,21 +1661,30 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
           { id: Date.now().toString(), type: 'response', text: messageToShow || rule.responseMessage || 'Acción ejecutada' },
         ];
 
-        // Trigger Autosave side-effects if item received or scene changed
-        if (isAutosaveTriggered) {
+        const nextIsGameOver = !!(prev.isGameOver || isRuleGameOver);
+        const targetSceneObj = project.scenes.find((s) => s.id === nextSceneId);
+        const isNextStateTerminal = isStateGameOverOrEnding(
+          targetSceneObj,
+          newFlags,
+          newInventory,
+          newAppended[nextSceneId],
+          nextIsGameOver
+        );
+
+        // Trigger Autosave side-effects ONLY on safe states (never on death / bad ending / scene testing)
+        if (isAutosaveTriggered && !isNextStateTerminal) {
           setTimeout(() => {
             setShowSaveNotification(true);
             setTimeout(() => setShowSaveNotification(false), 2400);
           }, 0);
 
-          const currentSceneObj = project.scenes.find((s) => s.id === nextSceneId);
           const autosaveData: SaveSlotData = {
             id: 'autosave',
             timestamp: new Date().toLocaleString('es-ES'),
             gameId: project.id,
             gameTitle: project.title,
             currentSceneId: nextSceneId,
-            currentSceneName: currentSceneObj?.name || 'Escena',
+            currentSceneName: targetSceneObj?.name || 'Escena',
             inventoryItemIds: newInventory,
             flags: newFlags,
             narrativeHistory: newHistory,
@@ -1531,7 +1712,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
           usedHotspotIds: newUsedHotspots,
           deliveredRuleKeys: newDeliveredKeys,
           verbUseCounts: newVerbUseCounts,
-          isGameOver: prev.isGameOver || isRuleGameOver,
+          isGameOver: nextIsGameOver,
           history: newHistory,
         };
       });
@@ -1565,7 +1746,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
           type: 'item',
           title: itemObj?.name || 'Objetos recibidos',
           verbIconName: 'Hand',
-          isAutosaved: true,
+          isAutosaved: !isSceneTesting && !isPredictedTerminal,
           itemImageUrl: itemObj?.imageFileData || itemObj?.imageUrl,
           message: messageToShow ? `${messageToShow}\n\n${itemMsg}` : itemMsg,
         });
@@ -1984,7 +2165,17 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
       );
     }
 
-    if ((giveItemObj && !dialogueAlreadyDelivered) || option.goToSceneId) {
+    const dlgTargetScene = option.goToSceneId
+      ? project.scenes.find((s) => s.id === option.goToSceneId)
+      : currentScene;
+    const dlgTargetFatal = !!option.isGameOver || isStateGameOverOrEnding(
+      dlgTargetScene,
+      { ...gameState.flags, ...(option.setFlags || {}) },
+      gameState.inventory,
+      option.goToSceneId ? gameState.appendedTextsPerScene[option.goToSceneId] : gameState.appendedTextsPerScene[gameState.currentSceneId],
+      !!gameState.isGameOver || !!option.isGameOver
+    );
+    if (!isSceneTesting && !dlgTargetFatal && ((giveItemObj && !dialogueAlreadyDelivered) || option.goToSceneId)) {
       setShowSaveNotification(true);
       setTimeout(() => setShowSaveNotification(false), 2500);
     }
@@ -2138,14 +2329,15 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
               <Skull className="w-4 h-4 text-rose-400 shrink-0 animate-pulse" />
               <span>Fin de la Historia</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {showRestart && (
                 <button
-                  onClick={onReset}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  onClick={handleRetryBeforeDeath}
+                  title="Volver a la escena anterior a la muerte"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black transition-all shadow-lg flex items-center gap-1.5 cursor-pointer active:scale-95"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Terminar / Reiniciar</span>
+                  <span>Reintentar</span>
                 </button>
               )}
               {showLoad && onOpenSaveLoad && (
@@ -2155,6 +2347,16 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                 >
                   <Bookmark className="w-3.5 h-3.5 text-emerald-300" />
                   <span>Cargar partida</span>
+                </button>
+              )}
+              {showRestart && (
+                <button
+                  onClick={() => setShowExitConfirmModal(true)}
+                  title={isSceneTesting ? 'Salir de la prueba y volver al editor' : 'Cerrar partida y salir a la biblioteca'}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Terminar</span>
                 </button>
               )}
             </div>
@@ -2177,13 +2379,14 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
               <Skull className="w-4 h-4 text-rose-400 shrink-0 animate-pulse" />
               <span>Fin de la Historia</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={onReset}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg flex items-center gap-1.5 cursor-pointer active:scale-95"
+                onClick={handleRetryBeforeDeath}
+                title="Volver a la escena anterior a la muerte"
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black transition-all shadow-lg flex items-center gap-1.5 cursor-pointer active:scale-95"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Terminar / Reiniciar</span>
+                <span>Reintentar</span>
               </button>
               {onOpenSaveLoad && (
                 <button
@@ -2194,6 +2397,14 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                   <span>Cargar partida</span>
                 </button>
               )}
+              <button
+                onClick={() => setShowExitConfirmModal(true)}
+                title={isSceneTesting ? 'Salir de la prueba y volver al editor' : 'Cerrar partida y salir a la biblioteca'}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Terminar</span>
+              </button>
             </div>
           </div>
         </>
@@ -2268,7 +2479,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     <div className={`min-h-[calc(100vh-60px)] ${themeConfig.bgClass} ${themeConfig.fontFamily} py-6 px-4 transition-colors duration-300`}>
       <div className="max-w-4xl mx-auto flex flex-col gap-5">
 
-        {/* Floating Auto-save Notification Toast */}
+        {/* Floating Auto-save & Retry Notification Toasts */}
         <AnimatePresence>
           {showSaveNotification && (
             <motion.div
@@ -2285,6 +2496,19 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
               </motion.div>
               <span className="font-bold text-[11px] uppercase tracking-wider text-emerald-300">
                 Progreso Autoguardado
+              </span>
+            </motion.div>
+          )}
+          {retryToast && (
+            <motion.div
+              initial={{ opacity: 0, y: -20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.9 }}
+              className="fixed top-28 right-6 z-50 bg-slate-900/95 border border-amber-500/50 text-amber-200 px-3.5 py-2 rounded-xl font-mono text-xs shadow-xl backdrop-blur-md flex items-center gap-2.5"
+            >
+              <RotateCcw className="w-4 h-4 text-amber-400" />
+              <span className="font-bold text-[11px] uppercase tracking-wider text-amber-200">
+                {retryToast}
               </span>
             </motion.div>
           )}
@@ -2962,14 +3186,12 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                   {modalFeedback.type === 'gameover' || modalFeedback.isGameOver ? (
                     <>
                       <button
-                        onClick={() => {
-                          dismissModalFeedback();
-                          onReset();
-                        }}
-                        className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-md transition-colors flex items-center gap-1.5 cursor-pointer"
+                        onClick={handleRetryBeforeDeath}
+                        title="Volver a la escena anterior a la muerte"
+                        className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-md transition-colors flex items-center gap-1.5 cursor-pointer"
                       >
                         <RotateCcw className="w-4 h-4" />
-                        <span>Terminar / Reiniciar</span>
+                        <span>Reintentar</span>
                       </button>
                       {onOpenSaveLoad && (
                         <button
@@ -2985,6 +3207,14 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                           <span>Cargar partida</span>
                         </button>
                       )}
+                      <button
+                        onClick={() => setShowExitConfirmModal(true)}
+                        title={isSceneTesting ? 'Salir de la prueba y volver al editor' : 'Cerrar partida y salir a la biblioteca'}
+                        className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-md transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Terminar</span>
+                      </button>
                       <button
                         onClick={() => dismissModalFeedback()}
                         className={`px-3.5 py-2 rounded-xl text-xs transition-colors border ${themeConfig.buttonBgClass} ${themeConfig.buttonBorderClass} ${themeConfig.buttonTextClass} ${themeConfig.buttonHoverClass}`}
@@ -3545,6 +3775,65 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
           </div>
         );
       })()}
+
+      {/* Confirmación para terminar la partida y volver a la biblioteca */}
+      <AnimatePresence>
+        {showExitConfirmModal && (
+          <div
+            className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
+            onClick={() => setShowExitConfirmModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Confirmar salida del juego"
+              className={`max-w-sm w-full rounded-2xl border-2 p-6 shadow-2xl space-y-4 cursor-default ${
+                isSepia
+                  ? 'bg-[#f5ebd7] border-[#822b16]/50 text-[#3b2d1d]'
+                  : `${themeConfig.cardBgClass} ${themeConfig.cardBorderClass} ${themeConfig.textMainClass}`
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-600/20 border border-rose-500/40 flex items-center justify-center shrink-0">
+                  <LogOut className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base">
+                    {isSceneTesting ? '¿Salir de la prueba?' : '¿Terminar la partida?'}
+                  </h3>
+                  <p className={`text-xs mt-0.5 ${isSepia ? 'text-[#6c553b]' : themeConfig.textMutedClass}`}>
+                    {isSceneTesting
+                      ? 'Se cerrará la vista previa de esta escena y volverás al editor.'
+                      : 'Se cerrará la historia actual y volverás a la biblioteca.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExitConfirmModal(false)}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${themeConfig.buttonBgClass} ${themeConfig.buttonBorderClass} ${themeConfig.buttonTextClass} ${themeConfig.buttonHoverClass}`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmExitGame}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-md transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{isSceneTesting ? 'Volver al editor' : 'Salir a la biblioteca'}</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

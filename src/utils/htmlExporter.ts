@@ -116,6 +116,137 @@ export function generateStandaloneHTML(project: GameProject, isForZip: boolean =
       font-size: 1.15rem;
       white-space: pre-line;
     }
+    .story-card h1 {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: var(--accent);
+      margin: 0.75rem 0;
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid rgba(234, 179, 8, 0.25);
+      line-height: 1.25;
+    }
+    .story-card h2 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #fde68a;
+      margin: 0.65rem 0;
+      line-height: 1.3;
+    }
+    .story-card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fef3c7;
+      margin: 0.5rem 0;
+      line-height: 1.35;
+    }
+    .story-card b, .story-card strong {
+      font-weight: 700;
+      color: #fef3c7;
+    }
+    .story-card i, .story-card em {
+      font-style: italic;
+      color: #e2e8f0;
+    }
+    .story-card u {
+      text-decoration: underline;
+      text-underline-offset: 4px;
+      text-decoration-color: rgba(234, 179, 8, 0.55);
+    }
+    .story-card p {
+      margin: 0.5rem 0;
+    }
+    .story-card ul, .story-card ol {
+      margin: 0.5rem 0 0.5rem 1.5rem;
+    }
+
+    /* Quick Time Event (QTE) HUD */
+    .qte-hud {
+      background: linear-gradient(90deg, rgba(69, 26, 3, 0.92), rgba(127, 29, 29, 0.92), rgba(69, 26, 3, 0.92));
+      border: 2px solid rgba(245, 158, 11, 0.75);
+      border-radius: 14px;
+      padding: 1rem 1.15rem;
+      margin-bottom: 1.35rem;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+      white-space: normal;
+    }
+    .qte-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      color: #fcd34d;
+      font-weight: 800;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.65rem;
+    }
+    .qte-timer {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 1rem;
+      font-weight: 800;
+      padding: 0.2rem 0.65rem;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.65);
+      border: 1px solid rgba(245, 158, 11, 0.5);
+      color: #fcd34d;
+    }
+    .qte-timer.urgent {
+      background: #e11d48;
+      border-color: #fda4af;
+      color: #ffffff;
+    }
+    .qte-track {
+      width: 100%;
+      height: 12px;
+      background: rgba(0, 0, 0, 0.65);
+      border-radius: 9999px;
+      overflow: hidden;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      padding: 2px;
+      margin-bottom: 0.7rem;
+    }
+    .qte-fill {
+      height: 100%;
+      border-radius: 9999px;
+      transition: width 0.1s linear, background-color 0.2s ease;
+    }
+    .qte-mistake {
+      background: rgba(225, 29, 72, 0.9);
+      color: #ffffff;
+      border: 1px solid #fda4af;
+      border-radius: 8px;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 0.65rem;
+    }
+    .qte-step-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      padding-top: 0.6rem;
+      border-top: 1px solid rgba(245, 158, 11, 0.22);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+    .qte-step-count {
+      color: rgba(253, 230, 138, 0.88);
+      font-weight: 600;
+    }
+    .qte-instruction {
+      background: rgba(245, 158, 11, 0.22);
+      color: #fef3c7;
+      border: 1px solid rgba(245, 158, 11, 0.5);
+      padding: 0.3rem 0.9rem;
+      border-radius: 9999px;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
 
     .doc-block {
       background-color: rgba(15, 23, 42, 0.55);
@@ -410,9 +541,9 @@ export function generateStandaloneHTML(project: GameProject, isForZip: boolean =
       <div class="difficulty-picker" style="display: inline-flex; align-items: center; gap: 0.4rem;">
         <label for="difficulty-select" style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Dificultad:</label>
         <select id="difficulty-select" onchange="changeDifficulty(this.value)" style="background: #0f172a; color: var(--accent); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.35rem 0.6rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; outline: none;">
-          <option value="facil">🌟 Fácil</option>
-          <option value="normal">🔍 Normal</option>
-          <option value="dificil">💀 Difícil</option>
+          <option value="facil">Fácil</option>
+          <option value="normal">Normal</option>
+          <option value="dificil">Difícil</option>
         </select>
       </div>
       <button class="btn" onclick="saveGame()">💾 Guardar</button>
@@ -466,7 +597,7 @@ export function generateStandaloneHTML(project: GameProject, isForZip: boolean =
         <button class="popup-close-x" onclick="closePopupModal()">✕</button>
       </div>
       <div class="popup-body" id="popup-body"></div>
-      <div class="popup-actions">
+      <div class="popup-actions" id="popup-actions">
         <button class="popup-btn" onclick="closePopupModal()">Entendido</button>
       </div>
     </div>
@@ -492,7 +623,7 @@ ${jsonProject}
       usedHotspotIds: [],
       deliveredRuleKeys: [],
       verbUseCounts: {},
-      difficulty: PROJECT.difficultyMode || 'easy',
+      difficulty: (PROJECT.difficultyMode === 'easy' ? 'facil' : (PROJECT.difficultyMode === 'hard' ? 'dificil' : (PROJECT.difficultyMode || 'facil'))),
       isGameOver: false
     };
 
@@ -504,6 +635,17 @@ ${jsonProject}
     let prevVisibleRevealKeys = new Set();
     let prevRevealSceneId = null;
     let deferredRevealDomIds = [];
+    let lastSafeSnapshot = null;
+
+    // QTE Runtime State
+    let qteTimeLeft = 0;
+    let qteStepIndex = 0;
+    let qteStatus = 'idle'; // 'idle' | 'active' | 'success' | 'failed'
+    let qteTimerInterval = null;
+    let qteMistakeTimeout = null;
+    let qteMistakeMsg = null;
+    let qteModalQueue = [];
+    let currentModalOnClose = null;
 
     function scrollToRevealedHtmlEl(el) {
       if (!el) return;
@@ -860,7 +1002,7 @@ ${VOICE_ENGINE_EMBED}
       });
       if (hasBlockGameOver) return true;
       const appended = gameState.appendedTexts[scene.id] || [];
-      const hasAppendedGameOver = appended.some(t => checkGameOverTag(t));
+      const hasAppendedGameOver = appended.some(t => checkGameOverTag(typeof t === 'string' ? t : t.text));
       return hasAppendedGameOver;
     }
 
@@ -874,11 +1016,11 @@ ${VOICE_ENGINE_EMBED}
 
     function isWordMatchInText(word, text) {
       if (!word || !text) return false;
-      const isWordChar = function(char) { return /[\p{L}\p{N}_]/u.test(char); };
+      const isWordChar = function(char) { return /[\\p{L}\\p{N}_]/u.test(char); };
       const startChar = word.charAt(0);
       const endChar = word.charAt(word.length - 1);
-      const prefix = isWordChar(startChar) ? '(?<![\\p{L}\\p{N}_])' : '';
-      const suffix = isWordChar(endChar) ? '(?![\\p{L}\\p{N}_])' : '';
+      const prefix = isWordChar(startChar) ? '(?<![\\\\p{L}\\\\p{N}_])' : '';
+      const suffix = isWordChar(endChar) ? '(?![\\\\p{L}\\\\p{N}_])' : '';
       const pattern = new RegExp(prefix + escapeRegExp(word) + suffix, 'iu');
       return pattern.test(text);
     }
@@ -895,14 +1037,14 @@ ${VOICE_ENGINE_EMBED}
 
       if (activeHotspots.length === 0) return escapeHTML(text);
 
-      const isWordChar = function(char) { return /[\p{L}\p{N}_]/u.test(char); };
+      const isWordChar = function(char) { return /[\\p{L}\\p{N}_]/u.test(char); };
       const sortedHotspots = [...activeHotspots].sort((a, b) => b.word.length - a.word.length);
       const hotspotPatterns = sortedHotspots.map(function(h) {
         const escaped = escapeRegExp(h.word);
         const startChar = h.word.charAt(0);
         const endChar = h.word.charAt(h.word.length - 1);
-        const prefix = isWordChar(startChar) ? '(?<![\\p{L}\\p{N}_])' : '';
-        const suffix = isWordChar(endChar) ? '(?![\\p{L}\\p{N}_])' : '';
+        const prefix = isWordChar(startChar) ? '(?<![\\\\p{L}\\\\p{N}_])' : '';
+        const suffix = isWordChar(endChar) ? '(?![\\\\p{L}\\\\p{N}_])' : '';
         return prefix + escaped + suffix;
       });
 
@@ -936,28 +1078,265 @@ ${VOICE_ENGINE_EMBED}
       return html;
     }
 
+    function renderFormattedInteractiveText(rawText, scene) {
+      if (!rawText) return '';
+      var normalized = String(rawText).replace(/\\r\\n/g, '\\n');
+      if (typeof DOMParser === 'undefined') {
+        return parseInteractiveText(normalized, scene);
+      }
+      try {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString('<div>' + normalized + '</div>', 'text/html');
+        var container = doc.body && doc.body.firstChild;
+        if (!container) return parseInteractiveText(normalized, scene);
+
+        var ALLOWED_TAGS = {
+          h1: true, h2: true, h3: true, h4: true,
+          b: true, strong: true, i: true, em: true, u: true, s: true,
+          p: true, br: true, ul: true, ol: true, li: true, blockquote: true, span: true, div: true
+        };
+
+        function walkNode(node) {
+          if (node.nodeType === 3) {
+            return parseInteractiveText(node.nodeValue || '', scene);
+          }
+          if (node.nodeType === 1) {
+            var tag = node.tagName.toLowerCase();
+            if (tag === 'script' || tag === 'style') return '';
+            var inner = '';
+            for (var i = 0; i < node.childNodes.length; i++) {
+              inner += walkNode(node.childNodes[i]);
+            }
+            if (tag === 'br') return '<br />';
+            if (!ALLOWED_TAGS[tag]) return inner;
+            return '<' + tag + '>' + inner + '</' + tag + '>';
+          }
+          return '';
+        }
+
+        var out = '';
+        for (var j = 0; j < container.childNodes.length; j++) {
+          out += walkNode(container.childNodes[j]);
+        }
+        return out;
+      } catch (e) {
+        return parseInteractiveText(normalized, scene);
+      }
+    }
+
+    function isSceneQTE(scene) {
+      return !!(scene && (scene.type === 'qte' || scene.qteConfig) && scene.qteConfig && scene.qteConfig.sequence && scene.qteConfig.sequence.length > 0);
+    }
+
+    function filterQTEProgressiveText(rawText, stepIndex, isFinished) {
+      if (!rawText) return '';
+      if (!/\\[\\d+\\]/.test(rawText)) {
+        return rawText;
+      }
+      var visibleText = rawText;
+      if (!isFinished) {
+        var regex = /\\[(\\d+)\\]/g;
+        var match;
+        while ((match = regex.exec(rawText)) !== null) {
+          var stepNum = parseInt(match[1], 10);
+          if (stepNum > stepIndex) {
+            visibleText = rawText.slice(0, match.index);
+            break;
+          }
+        }
+      }
+      return visibleText
+        .replace(/\\s+\\[\\d+\\](?=[,.;:!?])/g, '')
+        .replace(/\\[\\d+\\][ \\t]?/g, '')
+        .replace(/[ \\t\\r\\n]+$/, '');
+    }
+
+    function stopQTETimer() {
+      if (qteTimerInterval) {
+        clearInterval(qteTimerInterval);
+        qteTimerInterval = null;
+      }
+    }
+
+    function updateQTEHudDOM(scene) {
+      var timerEl = document.getElementById('qte-timer-text');
+      var timerWrap = document.getElementById('qte-timer-badge');
+      var fillEl = document.getElementById('qte-progress-bar');
+      var mistakeEl = document.getElementById('qte-mistake-box');
+      var timeLimit = (scene && scene.qteConfig && scene.qteConfig.timeLimitSeconds) ? scene.qteConfig.timeLimitSeconds : 10;
+
+      if (timerEl) {
+        timerEl.textContent = qteTimeLeft.toFixed(1) + 's';
+      }
+      if (timerWrap) {
+        if (qteTimeLeft <= 3) timerWrap.classList.add('urgent');
+        else timerWrap.classList.remove('urgent');
+      }
+      if (fillEl) {
+        var pct = Math.max(0, Math.min(100, (qteTimeLeft / timeLimit) * 100));
+        fillEl.style.width = pct + '%';
+        fillEl.style.backgroundColor = qteTimeLeft <= 3 ? '#f43f5e' : (qteTimeLeft <= 6 ? '#fbbf24' : '#34d399');
+      }
+      if (mistakeEl) {
+        if (qteMistakeMsg) {
+          mistakeEl.style.display = 'block';
+          mistakeEl.textContent = qteMistakeMsg;
+        } else {
+          mistakeEl.style.display = 'none';
+        }
+      }
+    }
+
+    function startQTETimer(scene) {
+      stopQTETimer();
+      if (!isSceneQTE(scene) || qteStatus !== 'active') return;
+      qteTimerInterval = setInterval(function() {
+        if (qteStatus !== 'active') {
+          stopQTETimer();
+          return;
+        }
+        qteTimeLeft = Math.max(0, +(qteTimeLeft - 0.1).toFixed(1));
+        updateQTEHudDOM(scene);
+        if (qteTimeLeft <= 0) {
+          stopQTETimer();
+          handleQTEFail('¡Tiempo agotado!');
+        }
+      }, 100);
+    }
+
+    function handleQTEFail(reasonMsg) {
+      stopQTETimer();
+      qteStatus = 'failed';
+      if (typeof playSound === 'function') playSound('error');
+      var scene = getActiveScene();
+      var config = scene && scene.qteConfig ? scene.qteConfig : {};
+      var failMsg = reasonMsg || config.onFailMessage || '¡No lograste reaccionar a tiempo!';
+
+      if (config.onFailFlag) {
+        gameState.flags[config.onFailFlag] = true;
+      }
+
+      if (config.isFailGameOver) {
+        gameState.isGameOver = true;
+        render();
+        showPopupModal('Fin de partida', escapeHTML(failMsg), null);
+      } else if (config.onFailSceneId) {
+        render();
+        showPopupModal('Tiempo agotado', escapeHTML(failMsg), null, function() {
+          gameState.currentSceneId = config.onFailSceneId;
+          render();
+        });
+      } else {
+        render();
+        showPopupModal('Tiempo agotado', escapeHTML(failMsg), null);
+      }
+    }
+
+    function handleQTESuccess(scene) {
+      stopQTETimer();
+      qteStatus = 'success';
+      if (typeof playSound === 'function') playSound('pickup');
+      var config = scene.qteConfig;
+      var successMsg = (config.onSuccessMessage || '').trim() || 'Has completado la secuencia a tiempo.';
+
+      if (config.onSuccessFlag) {
+        gameState.flags[config.onSuccessFlag] = true;
+      }
+
+      if (!gameState.deliveredRuleKeys) gameState.deliveredRuleKeys = [];
+      var qteKey = deliveryKey(scene.id, 'qte');
+      var qteAlreadyDelivered = gameState.deliveredRuleKeys.indexOf(qteKey) !== -1;
+      var itemIdsToGrant = qteAlreadyDelivered ? [] : (config.onSuccessItemIds || []).filter(Boolean);
+      if (itemIdsToGrant.length > 0) {
+        for (var ii = 0; ii < itemIdsToGrant.length; ii++) {
+          gameState.inventory.push(itemIdsToGrant[ii]);
+        }
+        gameState.deliveredRuleKeys.push(qteKey);
+      }
+
+      var itemsToGrant = itemIdsToGrant
+        .map(function(id) { return PROJECT.inventoryItems.find(function(it) { return it.id === id; }); })
+        .filter(Boolean);
+
+      var targetSceneId = config.onSuccessSceneId;
+      var transitionFn = targetSceneId ? function() {
+        gameState.currentSceneId = targetSceneId;
+        render();
+      } : null;
+
+      render();
+
+      var modals = [];
+      if (successMsg) {
+        modals.push({
+          title: 'Evento superado',
+          message: escapeHTML(successMsg),
+          imageSrc: null,
+          onClose: itemsToGrant.length === 0 ? transitionFn : null
+        });
+      }
+      itemsToGrant.forEach(function(item, idx) {
+        var isLast = idx === itemsToGrant.length - 1;
+        modals.push({
+          title: item.name,
+          message: escapeHTML('¡Has conseguido: ' + item.name + '!'),
+          imageSrc: getImageSrc(item),
+          onClose: isLast ? transitionFn : null
+        });
+      });
+
+      if (modals.length > 0) {
+        queuePopupModals(modals);
+      } else if (transitionFn) {
+        transitionFn();
+      }
+    }
+
+    function renderDeathActionBarHTML(showRetryOrEnd, showLoad) {
+      var btns = '';
+      if (showRetryOrEnd) {
+        btns += '<button class="btn" style="background: #f59e0b; color: #0f172a; font-weight: 800;" onclick="retryBeforeDeath()" title="Volver a la escena anterior a la muerte">Reintentar</button>';
+      }
+      if (showLoad) {
+        btns += '<button class="btn" onclick="loadGame()">Cargar partida</button>';
+      }
+      if (showRetryOrEnd) {
+        btns += '<button class="btn" style="background: #e11d48; color: #fff;" onclick="resetGame()">Reiniciar</button>';
+      }
+      return '<div style="margin: 1.25rem 0; padding: 1.25rem; background: #450a0a; border: 1px solid #f43f5e; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; box-shadow: 0 4px 15px rgba(244, 63, 94, 0.2);">' +
+               '<span style="color: #fda4af; font-weight: 700; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em;">Fin de la partida</span>' +
+               '<div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">' + btns + '</div>' +
+             '</div>';
+    }
+
     function renderTextBlock(text, scene, block) {
-      text = (text || '').replace(/\[\d+\]\s*/g, '');
-      if (checkGameOverTag(text)) {
-        const parts = text.split(GAME_OVER_TAG_GLOBAL);
+      var processedText = text || '';
+      if (isSceneQTE(scene)) {
+        processedText = filterQTEProgressiveText(processedText, qteStepIndex, qteStatus === 'success');
+      } else {
+        processedText = processedText
+          .replace(/\\s+\\[\\d+\\](?=[,.;:!?])/g, '')
+          .replace(/\\[\\d+\\][ \\t]?/g, '');
+      }
+      if (!processedText.trim()) return '';
+
+      if (checkGameOverTag(processedText)) {
+        const parts = processedText.split(GAME_OVER_TAG_GLOBAL);
         let html = '';
         parts.forEach(part => {
           if (checkGameOverTag(part)) {
-            html += '<div style="margin: 1.25rem 0; padding: 1.25rem; background: #450a0a; border: 1px solid #f43f5e; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; box-shadow: 0 4px 15px rgba(244, 63, 94, 0.2);">' +
-                      '<span style="color: #fda4af; font-weight: 700; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em;">💀 Fin de la partida</span>' +
-                      '<div style="display: flex; gap: 0.5rem;">' +
-                        '<button class="btn" style="background: #e11d48; color: #fff;" onclick="resetGame()">🔄 Reiniciar</button>' +
-                        '<button class="btn" onclick="loadGame()">📂 Cargar partida</button>' +
-                      '</div>' +
-                    '</div>';
+            var lower = part.toLowerCase();
+            var showRetryOrEnd = lower.indexOf('terminar') !== -1 || lower.indexOf('fin') !== -1;
+            var showLoad = lower.indexOf('cargar') !== -1 || lower.indexOf('terminar') !== -1;
+            html += renderDeathActionBarHTML(showRetryOrEnd, showLoad);
           } else if (part) {
-            html += parseInteractiveText(part, scene);
+            html += renderFormattedInteractiveText(part, scene);
           }
         });
         return html;
       }
 
-      let html = parseInteractiveText(text, scene);
+      let html = renderFormattedInteractiveText(processedText, scene);
       if (block && (block.type === 'final' || block.isGameOver)) {
         if (block.type === 'final') {
           const title = (PROJECT.gameCompleteTitle || '¡FIN DE LA AVENTURA!').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -968,18 +1347,12 @@ ${VOICE_ENGINE_EMBED}
                       '<div style="color: #cbd5e1; font-size: 0.8rem; margin-top: 0.25rem;">' + subtitle + '</div>' +
                     '</div>' +
                     '<div style="display: flex; gap: 0.5rem;">' +
-                      '<button class="btn" style="background: #f59e0b; color: #0f172a; font-weight: 800;" onclick="resetGame()">🔄 Volver a jugar</button>' +
-                      '<button class="btn" onclick="loadGame()">📂 Cargar partida</button>' +
+                      '<button class="btn" style="background: #f59e0b; color: #0f172a; font-weight: 800;" onclick="resetGame()">Volver a jugar</button>' +
+                      '<button class="btn" onclick="loadGame()">Cargar partida</button>' +
                     '</div>' +
                   '</div>';
         } else if (block.isGameOver) {
-          html += '<div style="margin: 1.25rem 0; padding: 1.25rem; background: #450a0a; border: 1px solid #f43f5e; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; box-shadow: 0 4px 15px rgba(244, 63, 94, 0.2);">' +
-                    '<span style="color: #fda4af; font-weight: 700; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em;">💀 Fin de la partida</span>' +
-                    '<div style="display: flex; gap: 0.5rem;">' +
-                      '<button class="btn" style="background: #e11d48; color: #fff;" onclick="resetGame()">🔄 Reiniciar</button>' +
-                      '<button class="btn" onclick="loadGame()">📂 Cargar partida</button>' +
-                    '</div>' +
-                  '</div>';
+          html += renderDeathActionBarHTML(true, true);
         }
       }
       return html;
@@ -996,11 +1369,14 @@ ${VOICE_ENGINE_EMBED}
       const scene = getActiveScene();
       const storyCard = document.getElementById('story-content');
       if (!scene) {
+        stopQTETimer();
+        qteStatus = 'idle';
         if (storyCard) storyCard.innerHTML = '<p style="color: #94a3b8; font-style: italic;">No hay escenas disponibles en este juego.</p>';
         return;
       }
 
-      if (lastRenderedSceneId !== scene.id) {
+      const isEnteringNewScene = lastRenderedSceneId !== scene.id;
+      if (isEnteringNewScene) {
         var pBlock = (scene.textBlocks || []).find(function(b) {
           return (typeof isBlockVisible === 'function' ? isBlockVisible(b) : true) && b.soundEffect && b.soundEffect !== 'none';
         });
@@ -1013,16 +1389,57 @@ ${VOICE_ENGINE_EMBED}
             playBlockSound(b.soundEffect, b.soundMode);
           }
         });
+
+        stopQTETimer();
+        qteMistakeMsg = null;
+        if (isSceneQTE(scene) && !isGameOverState()) {
+          qteTimeLeft = (scene.qteConfig && scene.qteConfig.timeLimitSeconds) ? scene.qteConfig.timeLimitSeconds : 10;
+          qteStepIndex = 0;
+          qteStatus = 'active';
+          startQTETimer(scene);
+        } else {
+          qteStatus = 'idle';
+          qteStepIndex = 0;
+        }
+      } else if (!isSceneQTE(scene) || isGameOverState()) {
+        stopQTETimer();
       }
 
       let combinedHTML = '';
 
       if (scene.type === 'portada') {
-        combinedHTML += '<div style="font-size: 0.75rem; font-weight: bold; color: #fbbf24; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(245, 158, 11, 0.2); padding-bottom: 0.5rem;">✨ Escena de Portada</div>';
+        combinedHTML += '<div style="font-size: 0.75rem; font-weight: bold; color: #fbbf24; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(245, 158, 11, 0.2); padding-bottom: 0.5rem;">Escena de Portada</div>';
       } else if (scene.type === 'introduccion') {
-        combinedHTML += '<div style="font-size: 0.75rem; font-weight: bold; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(14, 165, 233, 0.2); padding-bottom: 0.5rem;">📖 Escena de Introducción</div>';
+        combinedHTML += '<div style="font-size: 0.75rem; font-weight: bold; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(14, 165, 233, 0.2); padding-bottom: 0.5rem;">Escena de Introducción</div>';
       } else if (scene.type === 'final') {
         combinedHTML += '<div style="font-size: 0.75rem; font-weight: bold; color: #f59e0b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(245, 158, 11, 0.3); padding-bottom: 0.5rem;">Escena de Final (Conclusión)</div>';
+      }
+
+      // Render QTE Live HUD Banner when active
+      if (isSceneQTE(scene) && qteStatus === 'active' && scene.qteConfig) {
+        var timeLimit = scene.qteConfig.timeLimitSeconds || 10;
+        var pct = Math.max(0, Math.min(100, (qteTimeLeft / timeLimit) * 100));
+        var barColor = qteTimeLeft <= 3 ? '#f43f5e' : (qteTimeLeft <= 6 ? '#fbbf24' : '#34d399');
+        var currentStep = scene.qteConfig.sequence[qteStepIndex];
+        var stepLabel = (currentStep && currentStep.label) ? currentStep.label : '¡Realiza la acción requerida!';
+        var perActionTag = scene.qteConfig.timerMode === 'per_action'
+          ? '<span style="font-size: 0.7rem; opacity: 0.85; margin-left: 0.25rem;">/ acción</span>'
+          : '';
+        combinedHTML += '<div class="qte-hud">' +
+          '<div class="qte-top">' +
+            '<span>QUICK TIME EVENT EN CURSO</span>' +
+            '<span id="qte-timer-badge" class="qte-timer' + (qteTimeLeft <= 3 ? ' urgent' : '') + '"><span id="qte-timer-text">' + qteTimeLeft.toFixed(1) + 's</span>' + perActionTag + '</span>' +
+          '</div>' +
+          '<div class="qte-track">' +
+            '<div id="qte-progress-bar" class="qte-fill" style="width: ' + pct + '%; background-color: ' + barColor + ';"></div>' +
+          '</div>' +
+          '<div id="qte-mistake-box" class="qte-mistake" style="display: ' + (qteMistakeMsg ? 'block' : 'none') + ';">' + escapeHTML(qteMistakeMsg || '') + '</div>' +
+          '<div class="qte-step-row">' +
+            '<span class="qte-step-count">Paso <strong>' + (qteStepIndex + 1) + '</strong> de ' + scene.qteConfig.sequence.length + '</span>' +
+            '<span style="color: rgba(245, 158, 11, 0.5);">•</span>' +
+            '<span class="qte-instruction">' + escapeHTML(stepLabel) + '</span>' +
+          '</div>' +
+        '</div>';
       }
 
       // Group appended texts by blockId or unattached
@@ -1086,8 +1503,8 @@ ${VOICE_ENGINE_EMBED}
             const isDocExpanded = expandedDocBlocks[block.id] !== undefined ? expandedDocBlocks[block.id] : true;
             combinedHTML += '<div id="' + blockDomId + '" class="doc-block' + (isPendingBlock ? ' pending-reveal' : '') + '">';
             combinedHTML += '<button type="button" class="doc-header" onclick="window.toggleDocBlock(\\\'' + escapeHTML(block.id) + '\\\')">' +
-              '<span>📄 ' + escapeHTML(docTitle) + '</span>' +
-              '<span class="doc-hint">' + (isDocExpanded ? '▲ Replegar' : '▼ Leer') + '</span>' +
+              '<span>' + escapeHTML(docTitle) + '</span>' +
+              '<span class="doc-hint">' + (isDocExpanded ? 'Replegar' : 'Leer') + '</span>' +
             '</button>';
             if (isDocExpanded) {
               combinedHTML += '<div class="doc-body">';
@@ -1095,7 +1512,10 @@ ${VOICE_ENGINE_EMBED}
                 combinedHTML += '<div style="margin-bottom: 1rem; text-align: center;"><img src="' + escapeHTML(imgSrc) + '" alt="' + escapeHTML(docTitle) + '" style="display: block; max-width: 100%; height: auto; max-height: 80vh; object-fit: contain; border-radius: 12px; margin: 0 auto; border: 1px solid var(--border-color);" /></div>';
               }
               if (hasText) {
-                combinedHTML += '<p style="margin-bottom: 0;">' + renderTextBlock(block.text, scene, block) + '</p>';
+                const renderedBlockHtml = renderTextBlock(block.text, scene, block);
+                if (renderedBlockHtml) {
+                  combinedHTML += '<div style="margin-bottom: 0;">' + renderedBlockHtml + '</div>';
+                }
               }
               combinedHTML += '</div>';
             }
@@ -1112,7 +1532,10 @@ ${VOICE_ENGINE_EMBED}
             }
 
             if (hasText) {
-              combinedHTML += '<p style="margin-bottom: 0.75rem;">' + renderTextBlock(block.text, scene, block) + '</p>';
+              const renderedBlockHtml = renderTextBlock(block.text, scene, block);
+              if (renderedBlockHtml) {
+                combinedHTML += '<div style="margin-bottom: 0.75rem;">' + renderedBlockHtml + '</div>';
+              }
             }
 
             combinedHTML += '</div>';
@@ -1127,7 +1550,7 @@ ${VOICE_ENGINE_EMBED}
             const isNewApp = isSameRevealScene && !prevVisibleRevealKeys.has(appKey);
             const isPendingApp = isNewApp && isModalBlocking;
             if (isNewApp) newlyRevealedDomIds.push(appDomId);
-            combinedHTML += '<p id="' + appDomId + '"' + (isPendingApp ? ' class="pending-reveal"' : '') + ' style="margin-bottom: 1rem; color: #fef08a;">' + renderTextBlock(t, scene) + '</p>';
+            combinedHTML += '<div id="' + appDomId + '"' + (isPendingApp ? ' class="pending-reveal"' : '') + ' style="margin-bottom: 1rem; color: #fef08a;">' + renderTextBlock(t, scene) + '</div>';
           });
         }
       });
@@ -1140,13 +1563,18 @@ ${VOICE_ENGINE_EMBED}
         const isNewU = isSameRevealScene && !prevVisibleRevealKeys.has(uKey);
         const isPendingU = isNewU && isModalBlocking;
         if (isNewU) newlyRevealedDomIds.push(uDomId);
-        combinedHTML += '<p id="' + uDomId + '"' + (isPendingU ? ' class="pending-reveal"' : '') + ' style="margin-bottom: 1rem; color: #fef08a;">' + renderTextBlock(t, scene) + '</p>';
+        combinedHTML += '<div id="' + uDomId + '"' + (isPendingU ? ' class="pending-reveal"' : '') + ' style="margin-bottom: 1rem; color: #fef08a;">' + renderTextBlock(t, scene) + '</div>';
       });
 
       prevVisibleRevealKeys = currentRevealKeys;
 
       if (!combinedHTML) {
         combinedHTML = '<p style="color: #94a3b8; font-style: italic;">No hay texto disponible para mostrar en esta escena.</p>';
+      }
+
+      // If gameState.isGameOver is true (e.g. fatal action or QTE fail) and there wasn't already an inline death banner, append one so player is never stranded
+      if (gameState.isGameOver && combinedHTML.indexOf('Fin de la partida') === -1) {
+        combinedHTML += renderDeathActionBarHTML(true, true);
       }
 
       if (storyCard) storyCard.innerHTML = combinedHTML;
@@ -1171,6 +1599,7 @@ ${VOICE_ENGINE_EMBED}
       } else {
         if (controlsGrid) controlsGrid.style.display = '';
         if (sentenceBar) sentenceBar.style.display = '';
+        try { lastSafeSnapshot = JSON.parse(JSON.stringify(gameState)); } catch (e) {}
       }
 
       const diffSelectEl = document.getElementById('difficulty-select');
@@ -1191,20 +1620,17 @@ ${VOICE_ENGINE_EMBED}
       return true;
     }
 
-    function showPopupModal(title, message, imageSrc, iconSymbol) {
+    function showPopupModal(title, message, imageSrc, onCloseCallback) {
       const modal = document.getElementById('popup-modal');
       const titleEl = document.getElementById('popup-title');
       const bodyEl = document.getElementById('popup-body');
       if (!modal || !bodyEl) return;
 
-      let headerHtml = '';
-      if (iconSymbol) {
-        headerHtml += '<span style="font-size: 1.25rem; margin-right: 0.4rem; display: inline-flex; align-items: center;">' + iconSymbol + '</span>';
+      currentModalOnClose = (typeof onCloseCallback === 'function') ? onCloseCallback : null;
+
+      if (titleEl) {
+        titleEl.innerHTML = title ? ('<span>' + escapeHTML(title) + '</span>') : '';
       }
-      if (title) {
-        headerHtml += '<span>' + escapeHTML(title) + '</span>';
-      }
-      if (titleEl) titleEl.innerHTML = headerHtml;
 
       let content = '<div>' + message + '</div>';
       if (imageSrc) {
@@ -1214,9 +1640,25 @@ ${VOICE_ENGINE_EMBED}
       modal.style.display = 'flex';
     }
 
+    function queuePopupModals(modals) {
+      if (!modals || modals.length === 0) return;
+      var first = modals[0];
+      qteModalQueue = modals.slice(1);
+      showPopupModal(first.title, first.message, first.imageSrc, first.onClose);
+    }
+
     function closePopupModal() {
       const modal = document.getElementById('popup-modal');
+      var cb = currentModalOnClose;
+      currentModalOnClose = null;
+      if (qteModalQueue && qteModalQueue.length > 0) {
+        var nextM = qteModalQueue.shift();
+        showPopupModal(nextM.title, nextM.message, nextM.imageSrc, nextM.onClose);
+        if (cb) cb();
+        return;
+      }
       if (modal) modal.style.display = 'none';
+      if (cb) cb();
       if (deferredRevealDomIds && deferredRevealDomIds.length > 0) {
         const pending = deferredRevealDomIds.slice();
         deferredRevealDomIds = [];
@@ -1236,7 +1678,7 @@ ${VOICE_ENGINE_EMBED}
     function toggleDetailsModal() {
       const syn = PROJECT.synopsis || PROJECT.description || 'Sin sinopsis registrada.';
       const creds = PROJECT.credits ? ('<div style="margin-top: 1rem; background: rgba(0,0,0,0.4); padding: 0.75rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); font-family: monospace; font-size: 0.8rem;"><strong style="color: #fbbf24; display: block; margin-bottom: 0.25rem;">Créditos y Fuentes:</strong>' + formatTextWithLinks(PROJECT.credits).replace(/\\n/g, '<br/>') + '</div>') : '';
-      showPopupModal('📖 Detalles de la Historia', '<div style="font-size: 0.95rem; line-height: 1.6;"><strong>' + escapeHTML(PROJECT.title) + '</strong> por <em>' + escapeHTML(PROJECT.author) + '</em></div><div style="margin-top: 0.75rem; font-size: 0.9rem; color: #cbd5e1;">' + escapeHTML(syn).replace(/\\n/g, '<br/>') + '</div>' + creds, null, '✨');
+      showPopupModal('Detalles de la Historia', '<div style="font-size: 0.95rem; line-height: 1.6;"><strong>' + escapeHTML(PROJECT.title) + '</strong> por <em>' + escapeHTML(PROJECT.author) + '</em></div><div style="margin-top: 0.75rem; font-size: 0.9rem; color: #cbd5e1;">' + escapeHTML(syn).replace(/\\n/g, '<br/>') + '</div>' + creds, null);
     }
 
     function closePopupOnBackdrop(e) {
@@ -1320,7 +1762,6 @@ ${VOICE_ENGINE_EMBED}
           }
           if (sc.goToSceneId) {
             gameState.currentSceneId = sc.goToSceneId;
-            renderScene(sc.goToSceneId);
           }
 
           if (rule.soundEffect && typeof playSound === 'function') {
@@ -1329,12 +1770,12 @@ ${VOICE_ENGINE_EMBED}
 
           selectedInventoryItem = null;
           activeVerb = null;
-          renderInventory();
+          render();
           updateSentenceBar();
 
-          var comboTitle = '🧩 ' + (targetItem ? targetItem.name : '') + ' + ' + (sourceItem ? sourceItem.name : '');
+          var comboTitle = (targetItem ? targetItem.name : '') + ' + ' + (sourceItem ? sourceItem.name : '');
           var comboMsg = rule.responseMessage || 'Has combinado los objetos con éxito.';
-          showPopupModal(comboTitle, escapeHTML(comboMsg), getImageSrc(targetItem) || getImageSrc(sourceItem), '✨');
+          showPopupModal(comboTitle, escapeHTML(comboMsg), getImageSrc(targetItem) || getImageSrc(sourceItem), null);
           return;
         }
 
@@ -1344,11 +1785,11 @@ ${VOICE_ENGINE_EMBED}
         updateSentenceBar();
 
         if (rule && !flagsMatch && rule.failMessage) {
-          showPopupModal('Combinación no disponible', escapeHTML(rule.failMessage), null, 'ℹ️');
+          showPopupModal('Combinación no disponible', escapeHTML(rule.failMessage), null);
         } else if (rule && flagsMatch && comboMissing.length > 0) {
-          showPopupModal('Combinación no disponible', escapeHTML(rule.failMessage || ('No tienes suficientes unidades. Te faltan: ' + comboMissing.join(', ') + '.')), null, 'ℹ️');
+          showPopupModal('Combinación no disponible', escapeHTML(rule.failMessage || ('No tienes suficientes unidades. Te faltan: ' + comboMissing.join(', ') + '.')), null);
         } else {
-          showPopupModal('Sin efecto', 'No parece ocurrir nada al usar ' + (sourceItem ? sourceItem.name : 'este objeto') + ' con ' + (targetItem ? targetItem.name : 'este objeto') + '.', null, 'ℹ️');
+          showPopupModal('Sin efecto', 'No parece ocurrir nada al usar ' + (sourceItem ? sourceItem.name : 'este objeto') + ' con ' + (targetItem ? targetItem.name : 'este objeto') + '.', null);
         }
         return;
       }
@@ -1370,7 +1811,7 @@ ${VOICE_ENGINE_EMBED}
           const cleanDesc = stripGameOverTag(item.description || '');
           const itemImg = getImageSrc(item);
           let modalContent = '<div>' + escapeHTML(cleanDesc || 'Sin descripción.') + '</div>';
-          showPopupModal(escapeHTML(item.name), modalContent, itemImg, '👁️');
+          showPopupModal(item.name, modalContent, itemImg, null);
         }
       } else {
         activeVerb = 'usar';
@@ -1388,7 +1829,7 @@ ${VOICE_ENGINE_EMBED}
 
       var rule = item.useEffectAction;
       if (!rule) {
-        showPopupModal(escapeHTML(item.name), 'No parece que puedas usar ' + escapeHTML(item.name) + ' por sí solo. Prueba a usarlo con alguna palabra clave del escenario o a combinarlo con otro objeto.', getImageSrc(item), 'ℹ️');
+        showPopupModal(item.name, 'No parece que puedas usar ' + escapeHTML(item.name) + ' por sí solo. Prueba a usarlo con alguna palabra clave del escenario o a combinarlo con otro objeto.', getImageSrc(item));
         return;
       }
 
@@ -1404,7 +1845,7 @@ ${VOICE_ENGINE_EMBED}
 
       if (!flagsMatch) {
         if (typeof playSound === 'function') playSound('error');
-        showPopupModal(escapeHTML(item.name), escapeHTML(rule.failMessage || 'No se cumplen las condiciones para usar este objeto en este momento.'), getImageSrc(item), 'ℹ️');
+        showPopupModal(item.name, escapeHTML(rule.failMessage || 'No se cumplen las condiciones para usar este objeto en este momento.'), getImageSrc(item));
         return;
       }
 
@@ -1442,7 +1883,6 @@ ${VOICE_ENGINE_EMBED}
 
       if (sc.goToSceneId) {
         gameState.currentSceneId = sc.goToSceneId;
-        renderScene(sc.goToSceneId);
       }
 
       if (rule.soundEffect && typeof playSound === 'function') {
@@ -1451,20 +1891,18 @@ ${VOICE_ENGINE_EMBED}
 
       selectedInventoryItem = null;
       activeVerb = null;
-      renderInventory();
-      updateSentenceBar();
 
-      var isGameOverUse = !!rule.isGameOver || !!sc.isGameOver;
-      var respMsg = rule.responseMessage || ('Has usado ' + item.name + '.');
-      showPopupModal('✨ ' + escapeHTML(item.name), escapeHTML(respMsg), getImageSrc(item), isGameOverUse ? '💀' : '✨');
-
+      var isGameOverUse = !!rule.isGameOver || !!(sc && sc.isGameOver);
       if (isGameOverUse) {
         gameState.isGameOver = true;
-        if (typeof showGameOverScreen === 'function') {
-          showGameOverScreen(escapeHTML(respMsg));
-        }
       }
-      if (typeof saveGameState === 'function') {
+
+      render();
+      updateSentenceBar();
+
+      var respMsg = rule.responseMessage || ('Has usado ' + item.name + '.');
+      showPopupModal(item.name, escapeHTML(respMsg), getImageSrc(item));
+      if (!isGameOverUse && !isGameOverState() && typeof saveGameState === 'function') {
         saveGameState();
       }
     }
@@ -1490,9 +1928,9 @@ ${VOICE_ENGINE_EMBED}
         const count = gameState.inventory.filter(id => id === itemId).length;
         const isSel = selectedInventoryItem === itemId ? 'selected' : '';
         const qtyBadge = count > 1 ? '<span class="inv-qty-badge">x' + count + '</span>' : '';
-        const isComboTarget = selectedInventoryItem && selectedInventoryItem !== itemId ? '<span style="font-size: 0.65rem; color: #fbbf24; background: rgba(245, 158, 11, 0.15); padding: 2px 5px; border-radius: 4px; margin-left: auto;">🧩 Combinar</span>' : '';
-        const useBadge = item.useEffectAction ? '<span style="font-size: 0.65rem; color: #34d399; background: rgba(16, 185, 129, 0.15); padding: 2px 5px; border-radius: 4px; margin-left: 4px;">✨ Usar</span>' : '';
-        return '<div class="inv-item ' + isSel + '" onclick="selectInventoryItem(\\\'' + itemId + '\\\')"><span>📦 ' + escapeHTML(item.name) + ' ' + qtyBadge + '</span><span style="display: flex; align-items: center; gap: 4px;">' + isComboTarget + useBadge + '</span></div>';
+        const isComboTarget = selectedInventoryItem && selectedInventoryItem !== itemId ? '<span style="font-size: 0.65rem; color: #fbbf24; background: rgba(245, 158, 11, 0.15); padding: 2px 5px; border-radius: 4px; margin-left: auto;">Combinar</span>' : '';
+        const useBadge = item.useEffectAction ? '<span style="font-size: 0.65rem; color: #34d399; background: rgba(16, 185, 129, 0.15); padding: 2px 5px; border-radius: 4px; margin-left: 4px;">Usar</span>' : '';
+        return '<div class="inv-item ' + isSel + '" onclick="selectInventoryItem(\\\'' + itemId + '\\\')"><span>' + escapeHTML(item.name) + ' ' + qtyBadge + '</span><span style="display: flex; align-items: center; gap: 4px;">' + isComboTarget + useBadge + '</span></div>';
       }).join('');
     }
 
@@ -1622,12 +2060,65 @@ ${VOICE_ENGINE_EMBED}
       const hs = (scene.hotspots || []).find(h => h.id === hotspotId);
       if (!hs) return;
 
+      // Handle active Quick Time Event (QTE)
+      if (isSceneQTE(scene) && qteStatus === 'active') {
+        var expectedStep = scene.qteConfig.sequence[qteStepIndex];
+        if (expectedStep) {
+          var qteVerbToUse = expectedStep.expectedVerb ? (activeVerb || 'mirar') : (activeVerb || undefined);
+          var isHotspotMatch = !expectedStep.hotspotId || expectedStep.hotspotId === hs.id;
+          var isWordMatch = !expectedStep.word || expectedStep.word.toLowerCase() === hs.word.toLowerCase();
+          var isVerbMatch = !expectedStep.expectedVerb || expectedStep.expectedVerb === qteVerbToUse;
+
+          if ((isHotspotMatch || isWordMatch) && isVerbMatch) {
+            qteMistakeMsg = null;
+            if (qteMistakeTimeout) { clearTimeout(qteMistakeTimeout); qteMistakeTimeout = null; }
+            var nextStep = qteStepIndex + 1;
+            clearSentence();
+            if (nextStep >= scene.qteConfig.sequence.length) {
+              handleQTESuccess(scene);
+            } else {
+              qteStepIndex = nextStep;
+              if (typeof playSound === 'function') playSound('pickup');
+              if (scene.qteConfig.timerMode === 'per_action') {
+                qteTimeLeft = scene.qteConfig.timeLimitSeconds || 10;
+              }
+              render();
+            }
+          } else {
+            if (typeof playSound === 'function') playSound('error');
+            var penalty = 2.5;
+            qteMistakeMsg = '¡Acción o verbo incorrecto! (-' + penalty + 's)';
+            if (qteMistakeTimeout) clearTimeout(qteMistakeTimeout);
+            qteMistakeTimeout = setTimeout(function() {
+              qteMistakeMsg = null;
+              updateQTEHudDOM(scene);
+            }, 1800);
+            qteTimeLeft = Math.max(0, +(qteTimeLeft - penalty).toFixed(1));
+            updateQTEHudDOM(scene);
+            if (qteTimeLeft <= 0) {
+              handleQTEFail('¡Acción incorrecta y tiempo agotado!');
+            }
+          }
+        }
+        return;
+      }
+
       if (!gameState.usedHotspotIds) gameState.usedHotspotIds = [];
       if (!gameState.usedHotspotIds.includes(hs.id)) {
         gameState.usedHotspotIds.push(hs.id);
       }
 
       const verbToUse = activeVerb || 'mirar';
+      var verbTitleLabels = {
+        mirar: 'Mirar',
+        usar: 'Usar',
+        abrir: 'Abrir',
+        coger: 'Coger',
+        hablar: 'Hablar',
+        empujar: 'Empujar',
+        ir_a: 'Ir a'
+      };
+      var actionHeaderTitle = (verbTitleLabels[verbToUse] || verbToUse) + ': ' + (hs.label || hs.word);
 
       // Find all matching action rules for this verb
       const rulesForVerb = (hs.actions || []).filter(function(a) {
@@ -1730,7 +2221,7 @@ ${VOICE_ENGINE_EMBED}
           }
         }
 
-        const isRuleGameOver = !!rule.isGameOver || !!(rule.stateChange && rule.stateChange.isGameOver) || checkGameOverTag(rule.responseMessage || '');
+        const isRuleGameOver = !!rule.isGameOver || !!(rule.stateChange && rule.stateChange.isGameOver) || checkGameOverTag(rule.responseMessage || '') || !!(sc && sc.appendStoryText && checkGameOverTag(sc.appendStoryText));
         if (isRuleGameOver) {
           gameState.isGameOver = true;
         }
@@ -1783,48 +2274,15 @@ ${VOICE_ENGINE_EMBED}
         }
         responseBox.innerHTML = '<div>' + escapeHTML(msg) + '</div>' + addedImgHtml;
 
-        const VERB_ICONS = {
-          mirar: '👁️',
-          examinar: '🔍',
-          coger: '✋',
-          tomar: '✋',
-          usar: '⚙️',
-          hablar: '💬',
-          ir: '🚪',
-          abrir: '📂',
-          empujar: '🫸',
-          tirar: '🫷',
-          dar: '🎁',
-          combinar: '🧩'
-        };
-        const actionIcon = VERB_ICONS[verbToUse] || '👁️';
-
         if (isRuleGameOver) {
-          showPopupModal('FIN DE PARTIDA', escapeHTML(msg), itemImgSrc, '💀');
+          showPopupModal('FIN DE PARTIDA', escapeHTML(msg), itemImgSrc);
         } else if (itemImgSrc) {
-          showPopupModal('Objeto', escapeHTML(msg), itemImgSrc, '📦');
-        } else {
-          // Action message: no text header, ONLY the verb icon
-          showPopupModal('', escapeHTML(msg), itemImgSrc, actionIcon);
+          showPopupModal(firstItem ? firstItem.name : 'Objeto', escapeHTML(msg), itemImgSrc);
+        } else if (msg) {
+          showPopupModal(actionHeaderTitle, escapeHTML(msg), itemImgSrc);
         }
       } else {
         // Fallback response - check if any rule for this verb specifies fail configurations
-        const VERB_ICONS = {
-          mirar: '👁️',
-          examinar: '🔍',
-          coger: '✋',
-          tomar: '✋',
-          usar: '⚙️',
-          hablar: '💬',
-          ir: '🚪',
-          abrir: '📂',
-          empujar: '🫸',
-          tirar: '🫷',
-          dar: '🎁',
-          combinar: '🧩'
-        };
-        const actionIcon = VERB_ICONS[verbToUse] || '👁️';
-
         var failedRule = null;
         for (var fi = 0; fi < rulesForVerb.length; fi++) {
           var r = rulesForVerb[fi];
@@ -1904,11 +2362,11 @@ ${VOICE_ENGINE_EMBED}
         responseBox.innerText = cleanFb;
 
         if (isFailGameOver) {
-          showPopupModal('FIN DE PARTIDA', escapeHTML(cleanFb), failImgSrc, '💀');
+          showPopupModal('FIN DE PARTIDA', escapeHTML(cleanFb), failImgSrc);
         } else if (failImgSrc) {
-          showPopupModal('Objeto', escapeHTML(cleanFb), failImgSrc, '📦');
+          showPopupModal('Objeto', escapeHTML(cleanFb), failImgSrc);
         } else {
-          showPopupModal('', escapeHTML(cleanFb), failImgSrc, actionIcon);
+          showPopupModal(actionHeaderTitle, escapeHTML(cleanFb), failImgSrc);
         }
       }
 
@@ -1919,9 +2377,9 @@ ${VOICE_ENGINE_EMBED}
     function saveGame() {
       try {
         localStorage.setItem('html_adventure_save_' + PROJECT.id, JSON.stringify(gameState));
-        showPopupModal('💾 Guardar Partida', '¡Partida guardada correctamente en este navegador!');
+        showPopupModal('Guardar Partida', '¡Partida guardada correctamente en este navegador!');
       } catch (e) {
-        showPopupModal('⚠️ Error', 'No se pudo guardar la partida en el almacenamiento local del navegador.');
+        showPopupModal('Error', 'No se pudo guardar la partida en el almacenamiento local del navegador.');
       }
     }
 
@@ -1929,13 +2387,17 @@ ${VOICE_ENGINE_EMBED}
       try {
         const data = localStorage.getItem('html_adventure_save_' + PROJECT.id);
         if (data) {
+          stopQTETimer();
+          qteStatus = 'idle';
+          qteStepIndex = 0;
+          qteMistakeMsg = null;
           gameState = JSON.parse(data);
           if (!gameState.verbUseCounts) gameState.verbUseCounts = {};
           if (!gameState.usedHotspotIds) gameState.usedHotspotIds = [];
           if (!gameState.deliveredRuleKeys) gameState.deliveredRuleKeys = [];
           if (!gameState.difficulty) gameState.difficulty = PROJECT.difficultyMode || 'easy';
           if (gameState.isGameOver === undefined) gameState.isGameOver = false;
-          showPopupModal('📂 Cargar Partida', '¡Partida cargada correctamente!');
+          showPopupModal('Cargar Partida', '¡Partida cargada correctamente!');
           expandedDocBlocks = {};
           prevVisibleDocIds = new Set();
           prevDocSceneId = null;
@@ -1945,15 +2407,51 @@ ${VOICE_ENGINE_EMBED}
           lastRenderedSceneId = null;
           render();
         } else {
-          showPopupModal('📂 Cargar Partida', 'No hay ninguna partida guardada en este navegador.');
+          showPopupModal('Cargar Partida', 'No hay ninguna partida guardada en este navegador.');
         }
       } catch (e) {
-        showPopupModal('⚠️ Error', 'No se pudo acceder a la partida guardada en el almacenamiento local.');
+        showPopupModal('Error', 'No se pudo acceder a la partida guardada en el almacenamiento local.');
       }
+    }
+
+    function retryBeforeDeath() {
+      closePopupModal();
+      stopQTETimer();
+      qteStatus = 'idle';
+      qteStepIndex = 0;
+      qteMistakeMsg = null;
+      qteModalQueue = [];
+      currentModalOnClose = null;
+      if (lastSafeSnapshot) {
+        try {
+          gameState = JSON.parse(JSON.stringify(lastSafeSnapshot));
+          gameState.isGameOver = false;
+          document.getElementById('response-box').style.display = 'none';
+          clearSentence();
+          expandedDocBlocks = {};
+          prevVisibleDocIds = new Set();
+          prevDocSceneId = null;
+          prevVisibleRevealKeys = new Set();
+          prevRevealSceneId = null;
+          deferredRevealDomIds = [];
+          lastRenderedSceneId = null;
+          render();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        } catch (e) {}
+      }
+      resetGame();
     }
 
     function resetGame() {
       if (confirm('¿Quieres reiniciar la partida? Se perderá el progreso no guardado.')) {
+        stopQTETimer();
+        qteStatus = 'idle';
+        qteStepIndex = 0;
+        qteMistakeMsg = null;
+        qteModalQueue = [];
+        currentModalOnClose = null;
+        lastSafeSnapshot = null;
         gameState = {
           currentSceneId: PROJECT.initialSceneId,
           inventory: [],

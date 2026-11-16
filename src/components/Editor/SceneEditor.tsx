@@ -1699,6 +1699,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
                   gameState={testSceneGameState}
                   setGameState={setTestSceneGameState}
                   onReset={startTestingActiveScene}
+                  onExit={stopTestingActiveScene}
                   isSceneTesting={true}
                 />
               </div>
