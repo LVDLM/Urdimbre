@@ -117,6 +117,44 @@ export function generateStandaloneHTML(project: GameProject, isForZip: boolean =
       white-space: pre-line;
     }
 
+    .doc-block {
+      background-color: rgba(15, 23, 42, 0.55);
+      border: 1px solid rgba(234, 179, 8, 0.35);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 1.25rem;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+    .doc-header {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background-color: rgba(234, 179, 8, 0.08);
+      border: none;
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 0.95rem;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+    }
+    .doc-header:hover {
+      background-color: rgba(234, 179, 8, 0.15);
+    }
+    .doc-hint {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .doc-body {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid rgba(234, 179, 8, 0.22);
+    }
+
     .hotspot {
       color: var(--accent);
       font-weight: 700;
@@ -439,6 +477,15 @@ ${jsonProject}
 
     let activeVerb = null;
     let selectedInventoryItem = null;
+    let expandedDocBlocks = {};
+    let prevVisibleDocIds = new Set();
+    let prevDocSceneId = null;
+
+    window.toggleDocBlock = function(blockId) {
+      const current = expandedDocBlocks[blockId] !== undefined ? expandedDocBlocks[blockId] : true;
+      expandedDocBlocks[blockId] = !current;
+      render();
+    };
 
     let audioCtx = null;
 
@@ -940,6 +987,23 @@ ${VOICE_ENGINE_EMBED}
         }
       });
 
+      // Track collapsible document blocks visibility & auto-expand on load/reveal
+      const isDocSceneSwitch = prevDocSceneId !== scene.id;
+      prevDocSceneId = scene.id;
+      const currentVisibleDocIds = new Set();
+      (scene.textBlocks || []).forEach((b) => {
+        if (b.type !== 'documento') return;
+        const req = b.requiredItemIds || (b.requiredItemId ? [b.requiredItemId] : []);
+        const hasReq = req.length === 0 || req.every(id => (gameState.inventory || []).includes(id));
+        if (checkConditions(b.visibleIfFlags, b.hiddenIfFlags) && hasReq) {
+          currentVisibleDocIds.add(b.id);
+          if (isDocSceneSwitch || !prevVisibleDocIds.has(b.id)) {
+            expandedDocBlocks[b.id] = true;
+          }
+        }
+      });
+      prevVisibleDocIds = currentVisibleDocIds;
+
       // Text blocks
       (scene.textBlocks || []).forEach((block, bIdx) => {
         const reqItems = block.requiredItemIds || (block.requiredItemId ? [block.requiredItemId] : []);
@@ -949,21 +1013,42 @@ ${VOICE_ENGINE_EMBED}
           const isPortada = block.type === 'portada' || scene.type === 'portada';
           const hasText = !!(block.text && block.text.trim().length > 0);
 
-          combinedHTML += '<div id="block-' + block.id + '" style="margin-bottom: 1.25rem;">';
-
-          if (imgSrc) {
-            if (isPortada) {
-              combinedHTML += '<div style="margin-bottom: 1rem; text-align: center;"><img src="' + escapeHTML(imgSrc) + '" alt="Portada" style="display: block; max-width: 100%; height: auto; max-height: 85vh; object-fit: contain; border-radius: 16px; border: 2px solid var(--accent); box-shadow: 0 8px 25px rgba(0,0,0,0.5); margin: 0 auto;" /></div>';
-            } else {
-              combinedHTML += '<div style="margin-bottom: 1rem; text-align: center;"><img src="' + escapeHTML(imgSrc) + '" alt="Ilustración" style="display: block; max-width: 100%; height: auto; max-height: 80vh; object-fit: contain; border-radius: 12px; margin: 0 auto; border: 1px solid var(--border-color);" /></div>';
+          if (block.type === 'documento') {
+            const docTitle = (block.documentTitle && block.documentTitle.trim()) ? block.documentTitle.trim() : 'Documento citado';
+            const isDocExpanded = expandedDocBlocks[block.id] !== undefined ? expandedDocBlocks[block.id] : true;
+            combinedHTML += '<div id="block-' + block.id + '" class="doc-block">';
+            combinedHTML += '<button type="button" class="doc-header" onclick="window.toggleDocBlock(\\\'' + escapeHTML(block.id) + '\\\')">' +
+              '<span>📄 ' + escapeHTML(docTitle) + '</span>' +
+              '<span class="doc-hint">' + (isDocExpanded ? '▲ Replegar' : '▼ Leer') + '</span>' +
+            '</button>';
+            if (isDocExpanded) {
+              combinedHTML += '<div class="doc-body">';
+              if (imgSrc) {
+                combinedHTML += '<div style="margin-bottom: 1rem; text-align: center;"><img src="' + escapeHTML(imgSrc) + '" alt="' + escapeHTML(docTitle) + '" style="display: block; max-width: 100%; height: auto; max-height: 80vh; object-fit: contain; border-radius: 12px; margin: 0 auto; border: 1px solid var(--border-color);" /></div>';
+              }
+              if (hasText) {
+                combinedHTML += '<p style="margin-bottom: 0;">' + renderTextBlock(block.text, scene, block) + '</p>';
+              }
+              combinedHTML += '</div>';
             }
-          }
+            combinedHTML += '</div>';
+          } else {
+            combinedHTML += '<div id="block-' + block.id + '" style="margin-bottom: 1.25rem;">';
 
-          if (hasText) {
-            combinedHTML += '<p style="margin-bottom: 0.75rem;">' + renderTextBlock(block.text, scene, block) + '</p>';
-          }
+            if (imgSrc) {
+              if (isPortada) {
+                combinedHTML += '<div style="margin-bottom: 1rem; text-align: center;"><img src="' + escapeHTML(imgSrc) + '" alt="Portada" style="display: block; max-width: 100%; height: auto; max-height: 85vh; object-fit: contain; border-radius: 16px; border: 2px solid var(--accent); box-shadow: 0 8px 25px rgba(0,0,0,0.5); margin: 0 auto;" /></div>';
+              } else {
+                combinedHTML += '<div style="margin-bottom: 1rem; text-align: center;"><img src="' + escapeHTML(imgSrc) + '" alt="Ilustración" style="display: block; max-width: 100%; height: auto; max-height: 80vh; object-fit: contain; border-radius: 12px; margin: 0 auto; border: 1px solid var(--border-color);" /></div>';
+              }
+            }
 
-          combinedHTML += '</div>';
+            if (hasText) {
+              combinedHTML += '<p style="margin-bottom: 0.75rem;">' + renderTextBlock(block.text, scene, block) + '</p>';
+            }
+
+            combinedHTML += '</div>';
+          }
 
           // Render appended texts belonging to this block
           const attached = blockAppended[block.id] || [];
@@ -1748,6 +1833,9 @@ ${VOICE_ENGINE_EMBED}
           if (!gameState.difficulty) gameState.difficulty = PROJECT.difficultyMode || 'easy';
           if (gameState.isGameOver === undefined) gameState.isGameOver = false;
           showPopupModal('📂 Cargar Partida', '¡Partida cargada correctamente!');
+          expandedDocBlocks = {};
+          prevVisibleDocIds = new Set();
+          prevDocSceneId = null;
           lastRenderedSceneId = null;
           render();
         } else {
@@ -1775,6 +1863,9 @@ ${VOICE_ENGINE_EMBED}
         clearSentence();
         stopMusic();
         mutedMusic = null;
+        expandedDocBlocks = {};
+        prevVisibleDocIds = new Set();
+        prevDocSceneId = null;
         lastRenderedSceneId = null;
         render();
       }

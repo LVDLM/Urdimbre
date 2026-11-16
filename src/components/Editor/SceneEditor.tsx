@@ -608,11 +608,12 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
     }));
   };
 
-  const handleAddTextBlock = () => {
+  const handleAddTextBlock = (type: 'normal' | 'documento' = 'normal') => {
     const newBlock: SceneTextBlock = {
       id: `block_${Date.now()}`,
       text: '',
-      type: 'normal',
+      type,
+      ...(type === 'documento' ? { documentTitle: '' } : {}),
     };
     updateProject((prev) => ({
       ...prev,
@@ -661,7 +662,10 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
     }));
   };
 
-  const handleUpdateBlockType = (blockId: string, type: 'portada' | 'introduccion' | 'normal' | 'final') => {
+  const handleUpdateBlockType = (
+    blockId: string,
+    type: 'portada' | 'introduccion' | 'normal' | 'documento' | 'final'
+  ) => {
     updateProject((prev) => ({
       ...prev,
       scenes: prev.scenes.map((s) => {
@@ -669,6 +673,21 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
         return {
           ...s,
           textBlocks: s.textBlocks.map((b) => (b.id === blockId ? { ...b, type } : b)),
+        };
+      }),
+    }));
+  };
+
+  const handleUpdateBlockDocumentTitle = (blockId: string, documentTitle: string) => {
+    updateProject((prev) => ({
+      ...prev,
+      scenes: prev.scenes.map((s) => {
+        if (s.id !== activeScene.id) return s;
+        return {
+          ...s,
+          textBlocks: s.textBlocks.map((b) =>
+            b.id === blockId ? { ...b, documentTitle } : b
+          ),
         };
       }),
     }));
@@ -2516,7 +2535,11 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
               return (
                 <div
                   key={block.id}
-                  className="bg-black/40 border border-white/10 rounded-xl p-4 space-y-3 relative group"
+                  className={`${
+                    block.type === 'documento'
+                      ? 'bg-amber-950/15 border-amber-400/35'
+                      : 'bg-black/40 border-white/10'
+                  } border rounded-xl p-4 space-y-3 relative group transition-colors`}
                 >
                   <div className="flex flex-wrap items-center justify-between text-xs border-b border-white/5 pb-2.5 gap-2">
                     <div className="flex flex-wrap items-center gap-2">
@@ -2535,6 +2558,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
                         <option value="portada">🖼️ Portada</option>
                         <option value="introduccion">📖 Introducción</option>
                         <option value="normal">📝 Normal</option>
+                        <option value="documento">📄 Documento (Cita replegable)</option>
                         <option value="final">Final (Fin de historia)</option>
                       </select>
 
@@ -2653,6 +2677,12 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
                           Párrafo Final
                         </span>
                       )}
+                      {block.type === 'documento' && (
+                        <span className="text-[10px] bg-amber-500/15 text-amber-200 border border-amber-400/40 px-2 py-0.5 rounded font-semibold flex items-center gap-1 shadow-sm">
+                          <FileText className="w-3 h-3 text-amber-300" />
+                          Documento Replegable
+                        </span>
+                      )}
                       {visibleFlagsList.length > 0 && (
                         <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-mono flex items-center gap-1">
                           <Eye className="w-3 h-3 text-emerald-400" />
@@ -2718,6 +2748,28 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
                       )}
                     </div>
                   </div>
+
+                  {/* Document Citation Title Input */}
+                  {block.type === 'documento' && (
+                    <div className="bg-amber-500/[0.06] border border-amber-400/25 rounded-xl p-3 space-y-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label className="text-[11px] font-semibold text-amber-200 flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Título del documento citado</span>
+                        </label>
+                        <span className="text-[10px] text-white/45">
+                          Se muestra extendido al cargarse y el lector puede replegarlo pinchando en su título
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={block.documentTitle || ''}
+                        onChange={(e) => handleUpdateBlockDocumentTitle(block.id, e.target.value)}
+                        placeholder="Ej: Carta de Elena, Nota manuscrita, Recorte de prensa..."
+                        className="w-full bg-black/50 border border-amber-400/30 focus:border-amber-400 rounded-lg px-3 py-1.5 text-xs text-amber-50 placeholder:text-white/30 outline-none transition-colors"
+                      />
+                    </div>
+                  )}
 
                   {/* Image for Paragraph (Expanded if image exists OR if toggled via Insertar Imagen button) */}
                   {(block.imageFileData || block.imageUrl || openImageSectionBlockIds[block.id]) && (
@@ -3577,13 +3629,24 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
           );
         })}
 
-            <button
-              onClick={handleAddTextBlock}
-              className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-amber-400 font-semibold border border-dashed border-amber-500/30 hover:border-amber-500/60 rounded-xl text-xs flex items-center justify-center gap-2 transition-all"
-            >
-              <Plus className="w-4 h-4 text-amber-400" />
-              <span>Añadir Nuevo Bloque de Texto / Párrafo a esta Escena</span>
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => handleAddTextBlock('normal')}
+                className="w-full py-2.5 px-3 bg-white/5 hover:bg-white/10 text-amber-400 font-semibold border border-dashed border-amber-500/30 hover:border-amber-500/60 rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-amber-400" />
+                <span>Añadir Párrafo Normal</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddTextBlock('documento')}
+                className="w-full py-2.5 px-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 font-semibold border border-dashed border-amber-400/40 hover:border-amber-400/75 rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-amber-300" />
+                <span>Añadir Párrafo de Documento (Cita)</span>
+              </button>
+            </div>
           </div>
 
           {/* Quick manual keyword add */}

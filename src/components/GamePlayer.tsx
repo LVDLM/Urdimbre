@@ -39,6 +39,7 @@ import {
   VolumeX,
   Palette,
   Highlighter,
+  FileText,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { StarRatingDisplay, StoryRatingWidget } from './common/StarRating';
@@ -349,6 +350,20 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
   const isQTEScene = (currentScene?.type === 'qte' || !!currentScene?.qteConfig) && !!currentScene?.qteConfig?.sequence?.length;
 
+  // Collapsible Document Blocks state: auto-expands on load/reveal, collapses on title click
+  const [expandedDocBlocks, setExpandedDocBlocks] = useState<Record<string, boolean>>({});
+  const prevVisibleDocIdsRef = useRef<Set<string>>(new Set());
+  const prevDocSceneIdRef = useRef<string | null>(null);
+  const prevDocProjectIdRef = useRef<string | null>(null);
+  const prevDocHistoryLenRef = useRef<number>(0);
+
+  const toggleDocBlock = (blockId: string) => {
+    setExpandedDocBlocks((prev) => {
+      const current = prev[blockId] !== undefined ? prev[blockId] : true;
+      return { ...prev, [blockId]: !current };
+    });
+  };
+
   // Al cambiar de escena (o cargar la historia / una partida guardada) se vuelve al
   // inicio: tanto la página como la tarjeta narrativa, que en modo cabecera
   // colapsada en pantallas anchas es un contenedor con scroll propio.
@@ -449,6 +464,61 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
       setQteStatus('idle');
     }
   }, [gameState.currentSceneId, currentScene?.id, gameState.flags, gameState.inventory, project.customSounds]);
+
+  useEffect(() => {
+    const sceneId = currentScene?.id || null;
+    const projId = project?.id || null;
+    const histLen = gameState.history?.length || 0;
+    const isProjectSwitch = prevDocProjectIdRef.current !== projId;
+    const isSceneSwitch = prevDocSceneIdRef.current !== sceneId;
+    const isRestartReset = !isSceneSwitch && histLen === 0 && prevDocHistoryLenRef.current > 0;
+
+    prevDocProjectIdRef.current = projId;
+    prevDocSceneIdRef.current = sceneId;
+    prevDocHistoryLenRef.current = histLen;
+
+    if (!currentScene) {
+      prevVisibleDocIdsRef.current = new Set();
+      if (isProjectSwitch) setExpandedDocBlocks({});
+      return;
+    }
+
+    const visibleDocIds = (currentScene.textBlocks || [])
+      .filter((b) => {
+        if (b.type !== 'documento') return false;
+        if (b.visibleIfFlags && Object.entries(b.visibleIfFlags).some(([k, v]) => !!gameState.flags[k] !== v)) return false;
+        if (b.hiddenIfFlags && Object.entries(b.hiddenIfFlags).some(([k, v]) => !!gameState.flags[k] === v)) return false;
+        const reqItems = b.requiredItemIds || (b.requiredItemId ? [b.requiredItemId] : []);
+        if (reqItems.length > 0 && !reqItems.every((id) => gameState.inventory.includes(id))) return false;
+        return true;
+      })
+      .map((b) => b.id);
+
+    setExpandedDocBlocks((prev) => {
+      if (isProjectSwitch || isRestartReset) {
+        const fresh: Record<string, boolean> = {};
+        visibleDocIds.forEach((id) => {
+          fresh[id] = true;
+        });
+        return fresh;
+      }
+
+      let changed = false;
+      const next = { ...prev };
+      visibleDocIds.forEach((id) => {
+        const newlyRevealed = !prevVisibleDocIdsRef.current.has(id);
+        if (isSceneSwitch || newlyRevealed) {
+          if (next[id] !== true) {
+            next[id] = true;
+            changed = true;
+          }
+        }
+      });
+      return changed ? next : prev;
+    });
+
+    prevVisibleDocIdsRef.current = new Set(visibleDocIds);
+  }, [project?.id, currentScene, gameState.flags, gameState.inventory, gameState.history?.length]);
 
   useEffect(() => {
     if (qteStatus !== 'active' || !currentScene?.qteConfig) return;
@@ -2410,28 +2480,77 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                     const hasText = !!(block.text && block.text.trim().length > 0);
                     const attachedTexts = blockAppendedMap[block.id] || [];
 
+                    const isDocumento = block.type === 'documento';
+                    const isDocExpanded = isDocumento ? (expandedDocBlocks[block.id] ?? true) : true;
+                    const docTitle = block.documentTitle?.trim() || 'Documento citado';
+
                     return (
                       <React.Fragment key={block.id}>
-                        <div
-                          id={`block-${block.id}`}
-                          className="tracking-wide space-y-3 transition-all"
-                        >
-                          {blockImg && (
-                            <div className="w-full text-center my-3">
-                              <img
-                                src={blockImg}
-                                alt="Ilustración"
-                                className={
-                                  isPortada
-                                    ? 'w-auto max-w-full h-auto max-h-[85vh] object-contain rounded-2xl border-2 border-amber-500/50 shadow-2xl mx-auto block'
-                                    : 'w-auto max-w-full h-auto max-h-[80vh] object-contain rounded-xl border border-white/10 shadow-lg mx-auto block'
-                                }
-                              />
-                            </div>
-                          )}
+                        {isDocumento ? (
+                          <div
+                            id={`block-${block.id}`}
+                            className={`tracking-wide ${themeConfig.docContainerClass}`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleDocBlock(block.id)}
+                              aria-expanded={isDocExpanded}
+                              className={themeConfig.docHeaderClass}
+                            >
+                              <span className={themeConfig.docTitleClass}>
+                                <FileText className="w-4 h-4 shrink-0 opacity-85" />
+                                <span className="truncate">{docTitle}</span>
+                              </span>
+                              <span className={themeConfig.docHintClass}>
+                                <span className="hidden sm:inline">
+                                  {isDocExpanded ? 'Replegar' : 'Leer'}
+                                </span>
+                                {isDocExpanded ? (
+                                  <ChevronUp className="w-4 h-4 shrink-0" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 shrink-0" />
+                                )}
+                              </span>
+                            </button>
 
-                          {hasText && renderTextWithTags(block.text, block.isGameOver, isFinal)}
-                        </div>
+                            {isDocExpanded && (
+                              <div className={themeConfig.docBodyClass}>
+                                {blockImg && (
+                                  <div className="w-full text-center my-2">
+                                    <img
+                                      src={blockImg}
+                                      alt={docTitle}
+                                      className="w-auto max-w-full h-auto max-h-[80vh] object-contain rounded-xl border border-white/10 shadow-lg mx-auto block"
+                                    />
+                                  </div>
+                                )}
+
+                                {hasText && renderTextWithTags(block.text, block.isGameOver, isFinal)}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div
+                            id={`block-${block.id}`}
+                            className="tracking-wide space-y-3 transition-all"
+                          >
+                            {blockImg && (
+                              <div className="w-full text-center my-3">
+                                <img
+                                  src={blockImg}
+                                  alt="Ilustración"
+                                  className={
+                                    isPortada
+                                      ? 'w-auto max-w-full h-auto max-h-[85vh] object-contain rounded-2xl border-2 border-amber-500/50 shadow-2xl mx-auto block'
+                                      : 'w-auto max-w-full h-auto max-h-[80vh] object-contain rounded-xl border border-white/10 shadow-lg mx-auto block'
+                                  }
+                                />
+                              </div>
+                            )}
+
+                            {hasText && renderTextWithTags(block.text, block.isGameOver, isFinal)}
+                          </div>
+                        )}
 
                         {/* Appended Story Paragraphs attached to THIS block */}
                         {attachedTexts.map((appended, i) => (

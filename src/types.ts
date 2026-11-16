@@ -256,7 +256,8 @@ export interface DialogueBlock {
 
 export interface SceneTextBlock {
   id: string;
-  type?: 'portada' | 'introduccion' | 'normal' | 'final';
+  type?: 'portada' | 'introduccion' | 'normal' | 'documento' | 'final';
+  documentTitle?: string; // Título o nombre del documento citado cuando type === 'documento'
   text: string; // Narrative text content
   imageUrl?: string; // URL or Base64 data URL
   imageFileData?: string; // Uploaded Base64 file data

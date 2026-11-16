@@ -24,6 +24,11 @@ export interface ThemeConfig {
   buttonHoverClass: string;
   actionBoxBgClass: string;
   actionBoxTextClass: string;
+  docContainerClass: string;
+  docHeaderClass: string;
+  docTitleClass: string;
+  docHintClass: string;
+  docBodyClass: string;
 }
 
 export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
@@ -51,6 +56,11 @@ export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
     buttonHoverClass: 'hover:border-amber-500/50 hover:text-amber-300',
     actionBoxBgClass: 'bg-amber-500/10',
     actionBoxTextClass: 'text-amber-300',
+    docContainerClass: 'bg-[#171511] border border-amber-500/35 rounded-xl shadow-[inset_0_1px_0_rgba(245,158,11,0.12)] overflow-hidden transition-colors',
+    docHeaderClass: 'w-full flex items-center justify-between gap-3 px-4 py-3 text-left bg-amber-500/[0.08] hover:bg-amber-500/[0.15] transition-colors cursor-pointer',
+    docTitleClass: 'text-amber-300 font-mono font-bold text-sm sm:text-base tracking-wide flex items-center gap-2.5 min-w-0',
+    docHintClass: 'text-[11px] font-mono uppercase tracking-wider text-amber-400/75 flex items-center gap-1.5 shrink-0',
+    docBodyClass: 'px-4 sm:px-5 py-4 border-t border-amber-500/20 text-amber-50/95 space-y-3',
   },
   'modern-dark': {
     id: 'modern-dark',
@@ -76,6 +86,11 @@ export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
     buttonHoverClass: 'hover:border-amber-500/50 hover:text-amber-300',
     actionBoxBgClass: 'bg-amber-500/10',
     actionBoxTextClass: 'text-amber-300',
+    docContainerClass: 'bg-[#171a22] border border-slate-500/35 rounded-xl shadow-md overflow-hidden transition-colors',
+    docHeaderClass: 'w-full flex items-center justify-between gap-3 px-4 py-3 text-left bg-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer',
+    docTitleClass: 'text-amber-300 font-sans font-semibold text-sm sm:text-base tracking-tight flex items-center gap-2.5 min-w-0',
+    docHintClass: 'text-xs font-sans text-slate-400 flex items-center gap-1.5 shrink-0',
+    docBodyClass: 'px-4 sm:px-5 py-4 border-t border-white/10 text-slate-100/95 space-y-3',
   },
   'sepia-parchment': {
     id: 'sepia-parchment',
@@ -101,6 +116,11 @@ export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
     buttonHoverClass: 'hover:bg-[#dbbf92] hover:text-[#822b16] hover:border-[#822b16]',
     actionBoxBgClass: 'bg-[#e8d7b5]',
     actionBoxTextClass: 'text-[#3b2d1d]',
+    docContainerClass: 'bg-[#f4e9d2] border border-[#bda26e] rounded-xl shadow-sm overflow-hidden transition-colors',
+    docHeaderClass: 'w-full flex items-center justify-between gap-3 px-4 py-3 text-left bg-[#e6d3ad]/75 hover:bg-[#dec79a] transition-colors cursor-pointer',
+    docTitleClass: 'text-[#6e2210] font-serif font-bold text-sm sm:text-base flex items-center gap-2.5 min-w-0',
+    docHintClass: 'text-xs font-serif italic text-[#786146] flex items-center gap-1.5 shrink-0',
+    docBodyClass: 'px-4 sm:px-5 py-4 border-t border-[#cbb382]/80 text-[#332516] font-serif space-y-3',
   },
   'cyber-terminal': {
     id: 'cyber-terminal',
@@ -126,6 +146,11 @@ export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
     buttonHoverClass: 'hover:border-emerald-500 hover:text-emerald-100',
     actionBoxBgClass: 'bg-emerald-950/40',
     actionBoxTextClass: 'text-emerald-300',
+    docContainerClass: 'bg-emerald-950/55 border border-emerald-400/45 rounded-xl shadow-[0_0_18px_rgba(16,185,129,0.08)] overflow-hidden transition-colors',
+    docHeaderClass: 'w-full flex items-center justify-between gap-3 px-4 py-3 text-left bg-emerald-500/[0.12] hover:bg-emerald-500/[0.2] transition-colors cursor-pointer',
+    docTitleClass: 'text-emerald-200 font-mono font-bold text-sm sm:text-base tracking-wider flex items-center gap-2.5 min-w-0',
+    docHintClass: 'text-[11px] font-mono uppercase text-emerald-400/80 flex items-center gap-1.5 shrink-0',
+    docBodyClass: 'px-4 sm:px-5 py-4 border-t border-emerald-500/30 text-emerald-200 font-mono space-y-3',
   },
   'emerald-vintage': {
     id: 'emerald-vintage',
@@ -151,5 +176,10 @@ export const THEME_CONFIGS: Record<EngineTheme, ThemeConfig> = {
     buttonHoverClass: 'hover:border-yellow-500/50 hover:text-yellow-300',
     actionBoxBgClass: 'bg-emerald-950/30',
     actionBoxTextClass: 'text-yellow-300',
+    docContainerClass: 'bg-[#0b1b17] border border-emerald-700/55 rounded-xl shadow-md overflow-hidden transition-colors',
+    docHeaderClass: 'w-full flex items-center justify-between gap-3 px-4 py-3 text-left bg-emerald-900/35 hover:bg-emerald-900/55 transition-colors cursor-pointer',
+    docTitleClass: 'text-yellow-300 font-sans font-semibold text-sm sm:text-base flex items-center gap-2.5 min-w-0',
+    docHintClass: 'text-xs font-sans text-emerald-300/75 flex items-center gap-1.5 shrink-0',
+    docBodyClass: 'px-4 sm:px-5 py-4 border-t border-emerald-800/50 text-emerald-50/95 space-y-3',
   },
 };
