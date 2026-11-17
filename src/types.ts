@@ -287,6 +287,10 @@ export interface QTEStep {
 export interface QTEConfig {
   timeLimitSeconds: number; // Duration of the event in seconds (e.g. 10)
   timerMode?: 'sequence' | 'per_action'; // 'sequence' for total event duration, 'per_action' resets timer on each step
+  /** When enabled, each executed player action consumes one opportunity instead of using a countdown. */
+  consumeAttemptOnAnyAction?: boolean;
+  /** Maximum number of executed actions allowed in opportunity mode. */
+  maxActions?: number;
   sequence: QTEStep[]; // Ordered list of required actions
   onSuccessSceneId?: string; // Target scene on success
   onSuccessMessage?: string; // Custom narrative message on success
