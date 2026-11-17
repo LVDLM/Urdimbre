@@ -1980,6 +1980,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
                     type="number"
                     min={2}
                     max={120}
+                    disabled={!!activeScene?.qteConfig?.consumeAttemptOnAnyAction}
                     value={activeScene?.qteConfig?.timeLimitSeconds || 10}
                     onChange={(e) => {
                       const secs = Math.max(1, parseInt(e.target.value) || 10);
@@ -2005,6 +2006,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
                   </label>
                   <select
                     value={activeScene?.qteConfig?.timerMode || 'sequence'}
+                    disabled={!!activeScene?.qteConfig?.consumeAttemptOnAnyAction}
                     onChange={(e) => {
                       const mode = e.target.value as 'sequence' | 'per_action';
                       updateProject((prev) => ({
@@ -2024,6 +2026,66 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
                     <option value="sequence">Toda la secuencia (tiempo total acumulado)</option>
                     <option value="per_action">Por cada acción (se reinicia en cada paso)</option>
                   </select>
+                </div>
+
+                <div className="flex flex-col justify-center">
+                  <label className="block text-[10px] uppercase font-bold text-amber-300 mb-1">
+                    ⚡ Modo por oportunidades
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-amber-200 bg-black/40 border border-white/10 rounded-xl px-3 py-2 hover:bg-black/60 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={!!activeScene?.qteConfig?.consumeAttemptOnAnyAction}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        updateProject((prev) => ({
+                          ...prev,
+                          scenes: prev.scenes.map((s) => {
+                            if (s.id !== activeScene.id) return s;
+                            const prevConfig = s.qteConfig || { timeLimitSeconds: 10, sequence: [] };
+                            return {
+                              ...s,
+                              qteConfig: {
+                                ...prevConfig,
+                                consumeAttemptOnAnyAction: checked,
+                                maxActions: prevConfig.maxActions || 4,
+                              },
+                            };
+                          }),
+                        }));
+                      }}
+                      className="accent-amber-500 w-4 h-4 rounded cursor-pointer"
+                    />
+                    <span>Consumir una oportunidad con cada acción ejecutada</span>
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-amber-300 mb-1">
+                    🔢 Número máximo de oportunidades
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={999}
+                    disabled={!activeScene?.qteConfig?.consumeAttemptOnAnyAction}
+                    value={activeScene?.qteConfig?.maxActions || 4}
+                    onChange={(e) => {
+                      const maxActions = Math.max(1, Math.min(999, parseInt(e.target.value, 10) || 1));
+                      updateProject((prev) => ({
+                        ...prev,
+                        scenes: prev.scenes.map((s) => {
+                          if (s.id !== activeScene.id) return s;
+                          const prevConfig = s.qteConfig || { timeLimitSeconds: 10, sequence: [] };
+                          return {
+                            ...s,
+                            qteConfig: { ...prevConfig, maxActions },
+                          };
+                        }),
+                      }));
+                    }}
+                    className="w-full bg-black/60 border border-amber-500/40 rounded-xl px-3 py-2 text-sm text-amber-200 font-bold outline-none disabled:opacity-40"
+                  />
                 </div>
 
                 <div className="flex flex-col justify-center">
@@ -2054,6 +2116,12 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
                   </label>
                 </div>
               </div>
+
+              {activeScene?.qteConfig?.consumeAttemptOnAnyAction && (
+                <div className="bg-amber-950/30 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-200/90">
+                  En este modo no hay cuenta atrás: cada acción ejecutada consume una oportunidad. La acción que completa correctamente la secuencia no provoca el agotamiento del evento.
+                </div>
+              )}
 
               {activeScene?.qteConfig?.incrementalParagraphs && (
                 <div className="bg-amber-950/30 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-200/90 space-y-1">
