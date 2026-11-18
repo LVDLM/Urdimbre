@@ -390,6 +390,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   // Quick Time Event (QTE) State
   const [qteTimeLeft, setQteTimeLeft] = useState<number>(0);
   const [qteStepIndex, setQteStepIndex] = useState<number>(0);
+  const [qteActionsUsed, setQteActionsUsed] = useState<number>(0);
   const [qteStatus, setQteStatus] = useState<'active' | 'success' | 'failed' | 'idle'>('idle');
   const [qteMistakeMsg, setQteMistakeMsg] = useState<string | null>(null);
 
@@ -502,9 +503,9 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   const lastAudioSceneIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setQteMistakeMsg(null);
+    const isNewScene = !!currentScene && lastAudioSceneIdRef.current !== gameState.currentSceneId;
+    if (isNewScene) setQteMistakeMsg(null);
     if (currentScene) {
-      const isNewScene = lastAudioSceneIdRef.current !== gameState.currentSceneId;
       if (isNewScene) {
         lastAudioSceneIdRef.current = gameState.currentSceneId;
         playedBlockSoundIdsRef.current.clear();
@@ -550,13 +551,18 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         });
       }
     }
-    if (currentScene && (currentScene.type === 'qte' || currentScene.qteConfig) && currentScene.qteConfig?.sequence?.length) {
-      const timeLimit = currentScene.qteConfig.timeLimitSeconds || 10;
-      setQteTimeLeft(timeLimit);
-      setQteStepIndex(0);
-      setQteStatus('active');
-    } else {
-      setQteStatus('idle');
+    // QTE progress must not reset when an action changes flags or inventory in the same scene.
+    if (isNewScene) {
+      if (currentScene && (currentScene.type === 'qte' || currentScene.qteConfig) && currentScene.qteConfig?.sequence?.length) {
+        const timeLimit = currentScene.qteConfig.timeLimitSeconds || 10;
+        setQteTimeLeft(timeLimit);
+        setQteStepIndex(0);
+        setQteActionsUsed(0);
+        setQteStatus('active');
+      } else {
+        setQteActionsUsed(0);
+        setQteStatus('idle');
+      }
     }
   }, [gameState.currentSceneId, currentScene?.id, gameState.flags, gameState.inventory, project.customSounds]);
 
@@ -760,7 +766,11 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   }, [pendingScrollDomId]);
 
   useEffect(() => {
-    if (qteStatus !== 'active' || !currentScene?.qteConfig) return;
+    if (
+      qteStatus !== 'active' ||
+      !currentScene?.qteConfig ||
+      currentScene.qteConfig.consumeAttemptOnAnyAction
+    ) return;
 
     const interval = setInterval(() => {
       setQteTimeLeft((prev) => {
@@ -774,7 +784,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     }, 100);
 
     return () => clearInterval(interval);
-  }, [qteStatus, gameState.currentSceneId, currentScene?.id]);
+  }, [qteStatus, gameState.currentSceneId, currentScene?.id, currentScene?.qteConfig?.consumeAttemptOnAnyAction]);
 
   const handleQTEFail = (reasonMsg?: string) => {
     setQteStatus('failed');
@@ -914,6 +924,28 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     } else if (transitionAction) {
       transitionAction();
     }
+  };
+
+
+  /**
+   * Consumes an opportunity for non-hotspot actions while an opportunity-based QTE is active.
+   * Returns null outside this mode; otherwise indicates whether the limit was reached.
+   */
+  const consumeQTEOpportunity = (completesSequence = false): { failed: boolean; remaining: number } | null => {
+    const config = currentScene?.qteConfig;
+    if (qteStatus !== 'active' || !config?.consumeAttemptOnAnyAction) return null;
+
+    const maxActions = Math.max(1, Math.floor(Number(config.maxActions) || 4));
+    const nextCount = qteActionsUsed + 1;
+    const remaining = Math.max(0, maxActions - nextCount);
+    setQteActionsUsed(nextCount);
+
+    if (!completesSequence && nextCount >= maxActions) {
+      handleQTEFail(config.onFailMessage || 'Se han agotado las oportunidades.');
+      return { failed: true, remaining: 0 };
+    }
+
+    return { failed: false, remaining };
   };
 
   const checkConditions = (visibleFlags?: Record<string, boolean>, hiddenFlags?: Record<string, boolean>) => {
@@ -1092,6 +1124,12 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     }
 
     if (selectedInventoryItemId && selectedInventoryItemId !== itemId) {
+      const opportunity = consumeQTEOpportunity();
+      if (opportunity?.failed) {
+        setSelectedInventoryItemId(null);
+        setActiveVerb(null);
+        return;
+      }
       const sourceItemId = selectedInventoryItemId;
       const sourceItem = project.inventoryItems.find((i) => i.id === sourceItemId);
 
@@ -1223,6 +1261,8 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   };
 
   const handleUseInventoryItemDirectly = (targetItem: InventoryItem) => {
+    const opportunity = consumeQTEOpportunity();
+    if (opportunity?.failed) return;
     playSound('select');
     const rule = targetItem.useEffectAction;
 
@@ -1351,18 +1391,37 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         if ((isHotspotMatch || isWordMatch) && isVerbMatch) {
           setQteMistakeMsg(null);
           const nextStep = qteStepIndex + 1;
-          if (nextStep >= currentScene.qteConfig.sequence.length) {
+          const completesSequence = nextStep >= currentScene.qteConfig.sequence.length;
+          const opportunity = consumeQTEOpportunity(completesSequence);
+
+          // A successful final action takes priority over exhausting the last opportunity.
+          if (completesSequence) {
             handleQTESuccess();
+          } else if (opportunity?.failed) {
+            return;
           } else {
             setQteStepIndex(nextStep);
             playSound('pickup');
-            // Reset timer if per-action mode is active
-            if (currentScene.qteConfig.timerMode === 'per_action') {
+            // Reset timer if per-action mode is active (timed QTEs only).
+            if (!currentScene.qteConfig.consumeAttemptOnAnyAction && currentScene.qteConfig.timerMode === 'per_action') {
               setQteTimeLeft(currentScene.qteConfig.timeLimitSeconds || 10);
             }
+            if (opportunity) {
+              setQteMistakeMsg(`Oportunidades restantes: ${opportunity.remaining}`);
+              setTimeout(() => setQteMistakeMsg(null), 1800);
+            }
+          }
+        } else if (currentScene.qteConfig.consumeAttemptOnAnyAction) {
+          // Any executed action consumes an opportunity in this mode, including incorrect actions.
+          playSound('error');
+          const opportunity = consumeQTEOpportunity(false);
+          if (opportunity?.failed) return;
+          if (opportunity) {
+            setQteMistakeMsg(`⚠️ Acción incorrecta. Oportunidades restantes: ${opportunity.remaining}`);
+            setTimeout(() => setQteMistakeMsg(null), 1800);
           }
         } else {
-          // Wrong action in QTE sequence -> Penalize time & show inline HUD feedback
+          // Timed QTEs keep their existing time penalty for incorrect actions.
           playSound('error');
           const penalty = 2.5;
           setQteMistakeMsg(`⚠️ ¡Acción o verbo incorrecto! (-${penalty}s)`);
@@ -2023,6 +2082,8 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     character: GameCharacter,
     blockId?: string
   ) => {
+    const opportunity = consumeQTEOpportunity();
+    if (opportunity?.failed) return;
     playSound(option.soundEffect || 'select', project.customSounds);
 
     // Item giving (+Objeto)
@@ -2810,32 +2871,44 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                   <Zap className="w-5 h-5 text-amber-400 animate-bounce shrink-0" />
                   <span>⚡ QUICK TIME EVENT EN CURSO</span>
                 </div>
-                <div className={`font-mono text-base sm:text-lg px-3 py-1 rounded-xl border font-black flex items-center gap-1.5 ${
-                  qteTimeLeft <= 3
-                    ? 'bg-rose-600 text-white border-rose-400 animate-ping'
-                    : 'bg-black/70 text-amber-300 border-amber-500/50'
-                }`}>
-                  <span>⏱️</span>
-                  <span>{qteTimeLeft.toFixed(1)}s</span>
-                  {currentScene.qteConfig.timerMode === 'per_action' && (
+                {currentScene.qteConfig.consumeAttemptOnAnyAction ? (
+                  <div className="font-mono text-base sm:text-lg px-3 py-1 rounded-xl border font-black flex items-center gap-1.5 bg-black/70 text-amber-300 border-amber-500/50">
+                    <span>⚡</span>
+                    <span>{Math.max(0, (currentScene.qteConfig.maxActions || 4) - qteActionsUsed)} / {Math.max(1, currentScene.qteConfig.maxActions || 4)}</span>
                     <span className="text-[10px] text-amber-300/80 font-sans font-bold bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30 ml-1">
-                      / acción
+                      oportunidades
                     </span>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className={`font-mono text-base sm:text-lg px-3 py-1 rounded-xl border font-black flex items-center gap-1.5 ${
+                    qteTimeLeft <= 3
+                      ? 'bg-rose-600 text-white border-rose-400 animate-ping'
+                      : 'bg-black/70 text-amber-300 border-amber-500/50'
+                  }`}>
+                    <span>⏱️</span>
+                    <span>{qteTimeLeft.toFixed(1)}s</span>
+                    {currentScene.qteConfig.timerMode === 'per_action' && (
+                      <span className="text-[10px] text-amber-300/80 font-sans font-bold bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30 ml-1">
+                        / acción
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Countdown Progress Bar */}
-              <div className="w-full h-3.5 bg-black/70 rounded-full overflow-hidden border border-amber-500/40 p-0.5 shadow-inner">
-                <div
-                  className={`h-full rounded-full transition-all duration-100 ${
-                    qteTimeLeft <= 3 ? 'bg-rose-500' : qteTimeLeft <= 6 ? 'bg-amber-400' : 'bg-emerald-400'
-                  }`}
-                  style={{
-                    width: `${Math.max(0, Math.min(100, (qteTimeLeft / (currentScene.qteConfig.timeLimitSeconds || 10)) * 100))}%`,
-                  }}
-                />
-              </div>
+              {!currentScene.qteConfig.consumeAttemptOnAnyAction && (
+                <div className="w-full h-3.5 bg-black/70 rounded-full overflow-hidden border border-amber-500/40 p-0.5 shadow-inner">
+                  <div
+                    className={`h-full rounded-full transition-all duration-100 ${
+                      qteTimeLeft <= 3 ? 'bg-rose-500' : qteTimeLeft <= 6 ? 'bg-amber-400' : 'bg-emerald-400'
+                    }`}
+                    style={{
+                      width: `${Math.max(0, Math.min(100, (qteTimeLeft / (currentScene.qteConfig.timeLimitSeconds || 10)) * 100))}%`,
+                    }}
+                  />
+                </div>
+              )}
 
               {/* Mistake warning message indicator */}
               {qteMistakeMsg && (
