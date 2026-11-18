@@ -1,0 +1,42 @@
+diff --git a/src/components/GamePlayer.tsx b/src/components/GamePlayer.tsx
+--- a/src/components/GamePlayer.tsx
++++ b/src/components/GamePlayer.tsx
+@@ -8,7 +8,6 @@ import {
+   Eye,
+-  Zap,
+   DoorOpen,
+   Hand,
+   MessageSquare,
+   Move,
+   Footprints,
+@@ -2868,10 +2868,8 @@
+               <div className="flex flex-wrap items-center justify-between gap-2 text-amber-300 font-black text-xs sm:text-sm uppercase tracking-wider">
+                 <div className="flex items-center gap-2">
+-                  <Zap className="w-5 h-5 text-amber-400 animate-bounce shrink-0" />
+-                  <span>⚡ QUICK TIME EVENT EN CURSO</span>
++                  <span>QUICK TIME EVENT EN CURSO</span>
+                 </div>
+                 {currentScene.qteConfig.consumeAttemptOnAnyAction ? (
+                   <div className="font-mono text-base sm:text-lg px-3 py-1 rounded-xl border font-black flex items-center gap-1.5 bg-black/70 text-amber-300 border-amber-500/50">
+-                    <span>⚡</span>
+                     <span>{Math.max(0, (currentScene.qteConfig.maxActions || 4) - qteActionsUsed)} / {Math.max(1, currentScene.qteConfig.maxActions || 4)}</span>
+@@ -2910,13 +2908,15 @@
+-              {/* Step indicator - Centered instruction */}
++              {/* Step indicator. In opportunity mode, do not reveal the target action. */}
+               <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 text-xs border-t border-amber-500/20 pt-2.5 text-center">
+                 <span className="text-amber-200/80 font-medium">
+                   Paso <strong className="text-amber-300 text-sm font-black">{qteStepIndex + 1}</strong> de {currentScene.qteConfig.sequence.length}
+                 </span>
+-                <span className="hidden sm:inline text-amber-500/50">•</span>
+-                <span className="bg-amber-500/25 text-amber-200 border border-amber-500/50 px-4 py-1.5 rounded-full font-bold shadow-sm text-xs sm:text-sm text-center inline-block">
+-                  {currentScene.qteConfig.sequence[qteStepIndex]?.label || '¡Realiza la acción requerida!'}
+-                </span>
++                {!currentScene.qteConfig.consumeAttemptOnAnyAction && (
++                  <>
++                    <span className="hidden sm:inline text-amber-500/50">•</span>
++                    <span className="bg-amber-500/25 text-amber-200 border border-amber-500/50 px-4 py-1.5 rounded-full font-bold shadow-sm text-xs sm:text-sm text-center inline-block">
++                      {currentScene.qteConfig.sequence[qteStepIndex]?.label || '¡Realiza la acción requerida!'}
++                    </span>
++                  </>
++                )}
+               </div>
