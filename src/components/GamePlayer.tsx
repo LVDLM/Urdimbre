@@ -438,6 +438,9 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   const narrativeRef = useRef<HTMLDivElement>(null);
   const qteHudRef = useRef<HTMLDivElement>(null);
   const lastClickedContainerIdRef = useRef<string | null>(null);
+  const skipNextTopResetRef = useRef<boolean>(false);
+  const pendingScrollModeRef = useRef<'reveal' | 'qte-origin'>('reveal');
+  const qteRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qteReturnAnchorRef = useRef<{
     originSceneId: string;
     qteSceneId: string;
@@ -452,16 +455,11 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     setActiveVerb(null);
     setSelectedInventoryItemId(null);
     setContextMenu(null);
-    const anchor = qteReturnAnchorRef.current;
-    const prevSceneId = prevRevealSnapshotRef.current.sceneId;
-    const isReturningFromQte = !!(
-      anchor &&
-      prevSceneId === anchor.qteSceneId &&
-      gameState.currentSceneId === anchor.originSceneId
-    );
-    if (isReturningFromQte) {
+    if (skipNextTopResetRef.current) {
+      skipNextTopResetRef.current = false;
       return;
     }
+    const anchor = qteReturnAnchorRef.current;
     if (!anchor || gameState.currentSceneId !== anchor.qteSceneId) {
       qteReturnAnchorRef.current = null;
     }
@@ -513,32 +511,66 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
   const getStickySafeTopMargin = () => {
     const stickyTopBase = isHeaderCollapsed ? 48 : 62;
-    if (qteHudRef.current) {
+    if (isQTEScene && qteStatus === 'active' && qteHudRef.current) {
       return stickyTopBase + qteHudRef.current.getBoundingClientRect().height + 16;
     }
-    return Math.min(140, Math.round(window.innerHeight * 0.2));
+    return stickyTopBase + 16;
   };
 
-  const scrollToRevealedElement = (el: HTMLElement) => {
+  const scrollToRevealedElement = (el: HTMLElement, mode: 'reveal' | 'qte-origin' = 'reveal') => {
     const container = narrativeRef.current;
     const isContainerScrollable =
       container &&
       container.scrollHeight > container.clientHeight + 4 &&
       ['auto', 'scroll'].includes(window.getComputedStyle(container).overflowY);
+    const bottomPadding = 112; // ~3-4 lines of breathing room below so added paragraphs & animations never start below fold
 
     if (isContainerScrollable && container) {
       const containerRect = container.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
-      const targetTop = Math.max(0, container.scrollTop + (elRect.top - containerRect.top) - 24);
-      container.scrollTo({ top: targetTop, behavior: 'smooth' });
-      if (containerRect.top < getStickySafeTopMargin() || containerRect.top > window.innerHeight * 0.6) {
-        container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const elTopInContainer = container.scrollTop + (elRect.top - containerRect.top);
+      const elBottomInContainer = elTopInContainer + elRect.height;
+      const maxTopScroll = Math.max(0, elTopInContainer - 24);
+      const neededBottomScroll = Math.max(0, elBottomInContainer + bottomPadding - container.clientHeight);
+
+      let targetTop = maxTopScroll;
+      if (elRect.height + bottomPadding + 24 <= container.clientHeight) {
+        const midScroll = Math.max(
+          0,
+          elTopInContainer - Math.round((container.clientHeight - elRect.height) * 0.32)
+        );
+        targetTop = Math.min(maxTopScroll, Math.max(neededBottomScroll, midScroll));
+      } else if (mode === 'qte-origin') {
+        targetTop = neededBottomScroll;
+      }
+
+      container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+
+      const stickyTopBase = isHeaderCollapsed ? 52 : 68;
+      if (containerRect.top < stickyTopBase) {
+        window.scrollTo({
+          top: Math.max(0, window.scrollY + containerRect.top - stickyTopBase - 8),
+          behavior: 'smooth',
+        });
       }
     } else {
       const elRect = el.getBoundingClientRect();
-      const desiredOffset = getStickySafeTopMargin();
-      const targetY = Math.max(0, window.scrollY + elRect.top - desiredOffset);
-      window.scrollTo({ top: targetY, behavior: 'smooth' });
+      const safeTop = getStickySafeTopMargin();
+      const availH = Math.max(120, window.innerHeight - safeTop - bottomPadding);
+      const elTopDoc = window.scrollY + elRect.top;
+      const elBottomDoc = elTopDoc + elRect.height;
+      const maxTopY = Math.max(0, elTopDoc - safeTop);
+      const neededBottomY = Math.max(0, elBottomDoc + bottomPadding - window.innerHeight);
+
+      let targetY = maxTopY;
+      if (elRect.height <= availH) {
+        const midY = Math.max(0, elTopDoc - safeTop - Math.round((availH - elRect.height) * 0.25));
+        targetY = Math.min(maxTopY, Math.max(neededBottomY, midY));
+      } else if (mode === 'qte-origin') {
+        targetY = neededBottomY;
+      }
+
+      window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
     }
   };
 
@@ -612,6 +644,10 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   useEffect(() => {
     return () => {
       stopAllAudio();
+      if (qteRevealTimerRef.current) {
+        clearTimeout(qteRevealTimerRef.current);
+        qteRevealTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -804,21 +840,38 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
       if (isReturningFromQte && anchor) {
         qteReturnAnchorRef.current = null;
+        skipNextTopResetRef.current = true;
+        if (qteRevealTimerRef.current) {
+          clearTimeout(qteRevealTimerRef.current);
+          qteRevealTimerRef.current = null;
+        }
+
+        // Restore prior scroll position synchronously before paint so the view never jumps to top: 0
+        if (narrativeRef.current && narrativeRef.current.scrollHeight > narrativeRef.current.clientHeight + 4) {
+          narrativeRef.current.scrollTop = anchor.originScrollTop || 0;
+        }
+        window.scrollTo({ top: anchor.originWindowScrollY || 0, left: 0, behavior: 'auto' });
+
         const newlyAddedAfterQte = currentRevealItems.filter(
           (it) => !anchor.originVisibleKeys.has(it.key)
         );
         const hasBlockingModal = !!(modalFeedback || modalQueue.length > 0 || activeDialogue);
 
         if (newlyAddedAfterQte.length > 0) {
-          if (hasBlockingModal) {
-            setDeferredRevealKeys(new Set(newlyAddedAfterQte.map((it) => it.key)));
-          } else {
-            if (deferredRevealKeys.size > 0) setDeferredRevealKeys(new Set());
-            setHighlightedRevealKeys(new Set(newlyAddedAfterQte.map((it) => it.key)));
+          const newKeys = newlyAddedAfterQte.map((it) => it.key);
+          setDeferredRevealKeys(new Set(newKeys));
+          pendingScrollModeRef.current = 'reveal';
+          if (!hasBlockingModal) {
             setPendingScrollDomId(newlyAddedAfterQte[0].domId);
+            qteRevealTimerRef.current = setTimeout(() => {
+              setDeferredRevealKeys(new Set());
+              setHighlightedRevealKeys(new Set(newKeys));
+              qteRevealTimerRef.current = null;
+            }, 170);
           }
         } else {
           if (deferredRevealKeys.size > 0) setDeferredRevealKeys(new Set());
+          pendingScrollModeRef.current = 'qte-origin';
           const matchedOriginItem = anchor.originDomId
             ? currentRevealItems.find((it) => it.domId === anchor.originDomId)
             : null;
@@ -849,6 +902,11 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         return;
       }
 
+      if (qteRevealTimerRef.current) {
+        clearTimeout(qteRevealTimerRef.current);
+        qteRevealTimerRef.current = null;
+      }
+      skipNextTopResetRef.current = false;
       if (deferredRevealKeys.size > 0) setDeferredRevealKeys(new Set());
       if (highlightedRevealKeys.size > 0) setHighlightedRevealKeys(new Set());
       setPendingScrollDomId(null);
@@ -890,6 +948,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
       });
       const firstReady = currentRevealItems.find((it) => readyKeys.has(it.key));
       if (firstReady) {
+        pendingScrollModeRef.current = 'reveal';
         setPendingScrollDomId(firstReady.domId);
       }
     }
@@ -918,11 +977,12 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     if (!pendingScrollDomId) return;
     let raf1 = 0;
     let raf2 = 0;
+    const mode = pendingScrollModeRef.current;
     raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
         const el = document.getElementById(pendingScrollDomId);
         if (el) {
-          scrollToRevealedElement(el);
+          scrollToRevealedElement(el, mode);
         }
         setPendingScrollDomId(null);
       });
@@ -3111,10 +3171,23 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                 snap.sceneId === (currentScene?.id || null) &&
                 !((gameState.history?.length || 0) === 0 && snap.historyLen > 0);
 
+              const returningAnchor = qteReturnAnchorRef.current;
+              const isQteReturningNow = !!(
+                returningAnchor &&
+                snap.projectId === (project?.id || null) &&
+                snap.sceneId === returningAnchor.qteSceneId &&
+                currentScene?.id === returningAnchor.originSceneId &&
+                !((gameState.history?.length || 0) === 0 && snap.historyLen > 0)
+              );
+
               const getRevealState = (revealKey: string) => {
                 const justAppearedNow = isSameSceneContext && !snap.keys.has(revealKey);
+                const justAppearedFromQte =
+                  isQteReturningNow && !returningAnchor!.originVisibleKeys.has(revealKey);
                 const isPendingReveal =
-                  deferredRevealKeys.has(revealKey) || (justAppearedNow && hasBlockingModal);
+                  deferredRevealKeys.has(revealKey) ||
+                  justAppearedFromQte ||
+                  (justAppearedNow && hasBlockingModal);
                 const shouldAnimateAppear =
                   !isPendingReveal &&
                   (justAppearedNow ||

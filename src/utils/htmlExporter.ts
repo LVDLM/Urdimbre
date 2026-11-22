@@ -648,6 +648,8 @@ ${jsonProject}
     let lastSafeSnapshot = null;
     let lastClickedDomId = null;
     let qteReturnAnchor = null;
+    let deferredRevealMode = 'reveal';
+    let qteRevealTimer = null;
 
     // QTE Runtime State
     let qteTimeLeft = 0;
@@ -677,15 +679,30 @@ ${jsonProject}
       if (qteContainer && qteContainer.innerHTML && qteContainer.offsetHeight > 0) {
         return 8 + qteContainer.offsetHeight + 16;
       }
-      return Math.min(140, Math.round(window.innerHeight * 0.2));
+      return 48;
     }
 
-    function scrollToRevealedHtmlEl(el) {
+    function scrollToRevealedHtmlEl(el, mode) {
       if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const desiredOffset = getStickySafeHtmlOffset();
-      const targetY = Math.max(0, window.scrollY + rect.top - desiredOffset);
-      window.scrollTo({ top: targetY, behavior: 'smooth' });
+      mode = mode || 'reveal';
+      var bottomPadding = 112;
+      var rect = el.getBoundingClientRect();
+      var safeTop = getStickySafeHtmlOffset();
+      var availH = Math.max(120, window.innerHeight - safeTop - bottomPadding);
+      var elTopDoc = window.scrollY + rect.top;
+      var elBottomDoc = elTopDoc + rect.height;
+      var maxTopY = Math.max(0, elTopDoc - safeTop);
+      var neededBottomY = Math.max(0, elBottomDoc + bottomPadding - window.innerHeight);
+
+      var targetY = maxTopY;
+      if (rect.height <= availH) {
+        var midY = Math.max(0, elTopDoc - safeTop - Math.round((availH - rect.height) * 0.25));
+        targetY = Math.min(maxTopY, Math.max(neededBottomY, midY));
+      } else if (mode === 'qte-origin') {
+        targetY = neededBottomY;
+      }
+
+      window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
     }
 
     function ensureHtmlQteRevealVisible(anchorEl) {
@@ -709,7 +726,7 @@ ${jsonProject}
       }
     }
 
-    function triggerHtmlReveal(domIds) {
+    function triggerHtmlReveal(domIds, mode, skipScroll) {
       if (!domIds || domIds.length === 0) return;
       requestAnimationFrame(function() {
         var firstEl = null;
@@ -727,7 +744,7 @@ ${jsonProject}
             }, 750);
           }, 1700);
         });
-        if (firstEl) scrollToRevealedHtmlEl(firstEl);
+        if (firstEl && !skipScroll) scrollToRevealedHtmlEl(firstEl, mode || 'reveal');
       });
     }
 
@@ -1663,7 +1680,14 @@ ${VOICE_ENGINE_EMBED}
       if (storyCard) storyCard.innerHTML = combinedHTML;
 
       if (returningFromQte) {
+        if (qteRevealTimer) {
+          clearTimeout(qteRevealTimer);
+          qteRevealTimer = null;
+        }
         deferredRevealDomIds = [];
+        deferredRevealMode = 'reveal';
+        window.scrollTo({ top: returningFromQte.originScrollY || 0, behavior: 'auto' });
+
         var qteUnlockedDomIds = [];
         currentRevealKeys.forEach(function(rk) {
           if (!returningFromQte.originVisibleKeys.has(rk) && revealDomIdsByKey[rk]) {
@@ -1671,16 +1695,31 @@ ${VOICE_ENGINE_EMBED}
           }
         });
         if (qteUnlockedDomIds.length > 0) {
+          qteUnlockedDomIds.forEach(function(domId) {
+            var uEl = document.getElementById(domId);
+            if (uEl) uEl.classList.add('pending-reveal');
+          });
           if (isModalBlocking) {
             deferredRevealDomIds = qteUnlockedDomIds.slice();
+            deferredRevealMode = 'reveal';
           } else {
-            triggerHtmlReveal(qteUnlockedDomIds);
+            requestAnimationFrame(function() {
+              requestAnimationFrame(function() {
+                var firstUnlocked = document.getElementById(qteUnlockedDomIds[0]);
+                if (firstUnlocked) scrollToRevealedHtmlEl(firstUnlocked, 'reveal');
+              });
+            });
+            qteRevealTimer = setTimeout(function() {
+              qteRevealTimer = null;
+              triggerHtmlReveal(qteUnlockedDomIds, 'reveal', true);
+            }, 170);
           }
         } else if (returningFromQte.originDomId && document.getElementById(returningFromQte.originDomId)) {
           if (isModalBlocking) {
             deferredRevealDomIds = [returningFromQte.originDomId];
+            deferredRevealMode = 'qte-origin';
           } else {
-            triggerHtmlReveal([returningFromQte.originDomId]);
+            triggerHtmlReveal([returningFromQte.originDomId], 'qte-origin');
           }
         } else {
           requestAnimationFrame(function() {
@@ -1688,12 +1727,18 @@ ${VOICE_ENGINE_EMBED}
           });
         }
       } else if (!isSameRevealScene) {
+        if (qteRevealTimer) {
+          clearTimeout(qteRevealTimer);
+          qteRevealTimer = null;
+        }
         deferredRevealDomIds = [];
+        deferredRevealMode = 'reveal';
       } else if (newlyRevealedDomIds.length > 0) {
         if (isModalBlocking) {
           deferredRevealDomIds = deferredRevealDomIds.concat(newlyRevealedDomIds);
+          deferredRevealMode = 'reveal';
         } else {
-          triggerHtmlReveal(newlyRevealedDomIds);
+          triggerHtmlReveal(newlyRevealedDomIds, 'reveal');
         }
       } else if (isSceneQTE(scene) && qteStepIndex > 0 && (qteStatus === 'active' || qteStatus === 'success') && !isModalBlocking) {
         requestAnimationFrame(function() {
@@ -1774,8 +1819,10 @@ ${VOICE_ENGINE_EMBED}
       if (cb) cb();
       if (deferredRevealDomIds && deferredRevealDomIds.length > 0) {
         const pending = deferredRevealDomIds.slice();
+        const modeToUse = deferredRevealMode || 'reveal';
         deferredRevealDomIds = [];
-        triggerHtmlReveal(pending);
+        deferredRevealMode = 'reveal';
+        triggerHtmlReveal(pending, modeToUse);
       }
     }
 
@@ -2533,6 +2580,8 @@ ${VOICE_ENGINE_EMBED}
           prevVisibleRevealKeys = new Set();
           prevRevealSceneId = null;
           deferredRevealDomIds = [];
+          deferredRevealMode = 'reveal';
+          if (qteRevealTimer) { clearTimeout(qteRevealTimer); qteRevealTimer = null; }
           lastRenderedSceneId = null;
           qteReturnAnchor = null;
           lastClickedDomId = null;
@@ -2567,6 +2616,8 @@ ${VOICE_ENGINE_EMBED}
           prevVisibleRevealKeys = new Set();
           prevRevealSceneId = null;
           deferredRevealDomIds = [];
+          deferredRevealMode = 'reveal';
+          if (qteRevealTimer) { clearTimeout(qteRevealTimer); qteRevealTimer = null; }
           lastRenderedSceneId = null;
           render();
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2608,6 +2659,8 @@ ${VOICE_ENGINE_EMBED}
         prevVisibleRevealKeys = new Set();
         prevRevealSceneId = null;
         deferredRevealDomIds = [];
+        deferredRevealMode = 'reveal';
+        if (qteRevealTimer) { clearTimeout(qteRevealTimer); qteRevealTimer = null; }
         lastRenderedSceneId = null;
         render();
       }
