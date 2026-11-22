@@ -160,13 +160,21 @@ export function generateStandaloneHTML(project: GameProject, isForZip: boolean =
     }
 
     /* Quick Time Event (QTE) HUD */
+    #qte-hud-container {
+      position: sticky;
+      top: 8px;
+      z-index: 40;
+    }
+    #qte-hud-container:empty {
+      display: none;
+    }
     .qte-hud {
-      background: linear-gradient(90deg, rgba(69, 26, 3, 0.92), rgba(127, 29, 29, 0.92), rgba(69, 26, 3, 0.92));
-      border: 2px solid rgba(245, 158, 11, 0.75);
+      background: linear-gradient(90deg, #451a03, #7f1d1d, #451a03);
+      border: 2px solid rgba(245, 158, 11, 0.85);
       border-radius: 14px;
       padding: 1rem 1.15rem;
-      margin-bottom: 1.35rem;
-      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+      margin-bottom: 0;
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.65);
       white-space: normal;
     }
     .qte-top {
@@ -560,6 +568,8 @@ export function generateStandaloneHTML(project: GameProject, isForZip: boolean =
       <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="clearSentence()">Limpiar</button>
     </div>
 
+    <div id="qte-hud-container"></div>
+
     <div class="story-card" id="story-content">
       <!-- Story content rendered dynamically -->
     </div>
@@ -636,6 +646,8 @@ ${jsonProject}
     let prevRevealSceneId = null;
     let deferredRevealDomIds = [];
     let lastSafeSnapshot = null;
+    let lastClickedDomId = null;
+    let qteReturnAnchor = null;
 
     // QTE Runtime State
     let qteTimeLeft = 0;
@@ -647,12 +659,54 @@ ${jsonProject}
     let qteModalQueue = [];
     let currentModalOnClose = null;
 
+    function captureHtmlQteReturnAnchor(targetSceneId, fallbackDomId) {
+      if (!targetSceneId || targetSceneId === gameState.currentSceneId) return;
+      var targetScene = (PROJECT.scenes || []).find(function(s) { return s.id === targetSceneId; });
+      if (!isSceneQTE(targetScene)) return;
+      qteReturnAnchor = {
+        originSceneId: gameState.currentSceneId,
+        qteSceneId: targetScene.id,
+        originDomId: fallbackDomId || lastClickedDomId || null,
+        originVisibleKeys: new Set(prevVisibleRevealKeys),
+        originScrollY: window.scrollY || 0
+      };
+    }
+
+    function getStickySafeHtmlOffset() {
+      var qteContainer = document.getElementById('qte-hud-container');
+      if (qteContainer && qteContainer.innerHTML && qteContainer.offsetHeight > 0) {
+        return 8 + qteContainer.offsetHeight + 16;
+      }
+      return Math.min(140, Math.round(window.innerHeight * 0.2));
+    }
+
     function scrollToRevealedHtmlEl(el) {
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const desiredOffset = Math.min(140, Math.round(window.innerHeight * 0.2));
+      const desiredOffset = getStickySafeHtmlOffset();
       const targetY = Math.max(0, window.scrollY + rect.top - desiredOffset);
       window.scrollTo({ top: targetY, behavior: 'smooth' });
+    }
+
+    function ensureHtmlQteRevealVisible(anchorEl) {
+      if (!anchorEl) return;
+      var blockEl = anchorEl.closest('[id^="block-"], [id^="unattached-appended-"]') || anchorEl.parentElement || anchorEl;
+      var rawAnchorRect = anchorEl.getBoundingClientRect();
+      var blockRect = blockEl.getBoundingClientRect();
+      var anchorRect = (rawAnchorRect.height === 0 && rawAnchorRect.top === 0) ? blockRect : rawAnchorRect;
+      var safeTop = getStickySafeHtmlOffset();
+      var safeBottom = window.innerHeight - 24;
+      if (anchorRect.top < safeTop) {
+        var targetY = Math.max(0, window.scrollY + anchorRect.top - safeTop);
+        window.scrollTo({ top: targetY, behavior: 'smooth' });
+      } else if (blockRect.bottom > safeBottom) {
+        var neededDown = blockRect.bottom - safeBottom;
+        var maxDown = Math.max(0, anchorRect.top - safeTop);
+        var delta = Math.min(neededDown, maxDown);
+        if (delta > 2) {
+          window.scrollTo({ top: window.scrollY + delta, behavior: 'smooth' });
+        }
+      }
     }
 
     function triggerHtmlReveal(domIds) {
@@ -1103,6 +1157,7 @@ ${VOICE_ENGINE_EMBED}
           if (node.nodeType === 1) {
             var tag = node.tagName.toLowerCase();
             if (tag === 'script' || tag === 'style') return '';
+            if (tag === 'qte-mark') return '<span data-qte-latest="true" aria-hidden="true">&#8203;</span>';
             var inner = '';
             for (var i = 0; i < node.childNodes.length; i++) {
               inner += walkNode(node.childNodes[i]);
@@ -1128,22 +1183,28 @@ ${VOICE_ENGINE_EMBED}
       return !!(scene && (scene.type === 'qte' || scene.qteConfig) && scene.qteConfig && scene.qteConfig.sequence && scene.qteConfig.sequence.length > 0);
     }
 
-    function filterQTEProgressiveText(rawText, stepIndex, isFinished) {
+    function filterQTEProgressiveText(rawText, stepIndex, isFinished, activeMarkStep) {
       if (!rawText) return '';
-      if (!/\\[\\d+\\]/.test(rawText)) {
-        return rawText;
+      var sanitized = String(rawText).replace(/<\\/?qte-mark>/gi, '');
+      if (!/\\[\\d+\\]/.test(sanitized)) {
+        return sanitized;
       }
-      var visibleText = rawText;
+      var visibleText = sanitized;
       if (!isFinished) {
         var regex = /\\[(\\d+)\\]/g;
         var match;
-        while ((match = regex.exec(rawText)) !== null) {
+        while ((match = regex.exec(sanitized)) !== null) {
           var stepNum = parseInt(match[1], 10);
           if (stepNum > stepIndex) {
-            visibleText = rawText.slice(0, match.index);
+            visibleText = sanitized.slice(0, match.index);
             break;
           }
         }
+      }
+      if (activeMarkStep && activeMarkStep > 0) {
+        visibleText = visibleText
+          .replace(new RegExp('\\\\s+\\\\[' + activeMarkStep + '\\\\](?=[,.;:!?])', 'g'), '<qte-mark></qte-mark>')
+          .replace(new RegExp('\\\\[' + activeMarkStep + '\\\\][ \\\\t]?', 'g'), '<qte-mark></qte-mark>');
       }
       return visibleText
         .replace(/\\s+\\[\\d+\\](?=[,.;:!?])/g, '')
@@ -1312,7 +1373,8 @@ ${VOICE_ENGINE_EMBED}
     function renderTextBlock(text, scene, block) {
       var processedText = text || '';
       if (isSceneQTE(scene)) {
-        processedText = filterQTEProgressiveText(processedText, qteStepIndex, qteStatus === 'success');
+        var activeMarkStep = qteStepIndex > 0 && (qteStatus === 'active' || qteStatus === 'success') ? qteStepIndex : 0;
+        processedText = filterQTEProgressiveText(processedText, qteStepIndex, qteStatus === 'success', activeMarkStep);
       } else {
         processedText = processedText
           .replace(/\\s+\\[\\d+\\](?=[,.;:!?])/g, '')
@@ -1375,8 +1437,20 @@ ${VOICE_ENGINE_EMBED}
         return;
       }
 
+      const prevRenderedScene = lastRenderedSceneId;
       const isEnteringNewScene = lastRenderedSceneId !== scene.id;
+      var returningFromQte = null;
       if (isEnteringNewScene) {
+        if (qteReturnAnchor) {
+          if (qteReturnAnchor.qteSceneId === scene.id) {
+            window.scrollTo({ top: 0, behavior: 'auto' });
+          } else if (prevRenderedScene === qteReturnAnchor.qteSceneId && qteReturnAnchor.originSceneId === scene.id) {
+            returningFromQte = qteReturnAnchor;
+            qteReturnAnchor = null;
+          } else {
+            qteReturnAnchor = null;
+          }
+        }
         var pBlock = (scene.textBlocks || []).find(function(b) {
           return (typeof isBlockVisible === 'function' ? isBlockVisible(b) : true) && b.soundEffect && b.soundEffect !== 'none';
         });
@@ -1415,31 +1489,36 @@ ${VOICE_ENGINE_EMBED}
         combinedHTML += '<div style="font-size: 0.75rem; font-weight: bold; color: #f59e0b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(245, 158, 11, 0.3); padding-bottom: 0.5rem;">Escena de Final (Conclusión)</div>';
       }
 
-      // Render QTE Live HUD Banner when active
-      if (isSceneQTE(scene) && qteStatus === 'active' && scene.qteConfig) {
-        var timeLimit = scene.qteConfig.timeLimitSeconds || 10;
-        var pct = Math.max(0, Math.min(100, (qteTimeLeft / timeLimit) * 100));
-        var barColor = qteTimeLeft <= 3 ? '#f43f5e' : (qteTimeLeft <= 6 ? '#fbbf24' : '#34d399');
-        var currentStep = scene.qteConfig.sequence[qteStepIndex];
-        var stepLabel = (currentStep && currentStep.label) ? currentStep.label : '¡Realiza la acción requerida!';
-        var perActionTag = scene.qteConfig.timerMode === 'per_action'
-          ? '<span style="font-size: 0.7rem; opacity: 0.85; margin-left: 0.25rem;">/ acción</span>'
-          : '';
-        combinedHTML += '<div class="qte-hud">' +
-          '<div class="qte-top">' +
-            '<span>QUICK TIME EVENT EN CURSO</span>' +
-            '<span id="qte-timer-badge" class="qte-timer' + (qteTimeLeft <= 3 ? ' urgent' : '') + '"><span id="qte-timer-text">' + qteTimeLeft.toFixed(1) + 's</span>' + perActionTag + '</span>' +
-          '</div>' +
-          '<div class="qte-track">' +
-            '<div id="qte-progress-bar" class="qte-fill" style="width: ' + pct + '%; background-color: ' + barColor + ';"></div>' +
-          '</div>' +
-          '<div id="qte-mistake-box" class="qte-mistake" style="display: ' + (qteMistakeMsg ? 'block' : 'none') + ';">' + escapeHTML(qteMistakeMsg || '') + '</div>' +
-          '<div class="qte-step-row">' +
-            '<span class="qte-step-count">Paso <strong>' + (qteStepIndex + 1) + '</strong> de ' + scene.qteConfig.sequence.length + '</span>' +
-            '<span style="color: rgba(245, 158, 11, 0.5);">•</span>' +
-            '<span class="qte-instruction">' + escapeHTML(stepLabel) + '</span>' +
-          '</div>' +
-        '</div>';
+      // Render QTE Live HUD Banner in sticky container above story-card when active
+      var qteHudContainer = document.getElementById('qte-hud-container');
+      if (qteHudContainer) {
+        if (isSceneQTE(scene) && qteStatus === 'active' && scene.qteConfig) {
+          var timeLimit = scene.qteConfig.timeLimitSeconds || 10;
+          var pct = Math.max(0, Math.min(100, (qteTimeLeft / timeLimit) * 100));
+          var barColor = qteTimeLeft <= 3 ? '#f43f5e' : (qteTimeLeft <= 6 ? '#fbbf24' : '#34d399');
+          var currentStep = scene.qteConfig.sequence[qteStepIndex];
+          var stepLabel = (currentStep && currentStep.label) ? currentStep.label : '¡Realiza la acción requerida!';
+          var perActionTag = scene.qteConfig.timerMode === 'per_action'
+            ? '<span style="font-size: 0.7rem; opacity: 0.85; margin-left: 0.25rem;">/ acción</span>'
+            : '';
+          qteHudContainer.innerHTML = '<div class="qte-hud">' +
+            '<div class="qte-top">' +
+              '<span>QUICK TIME EVENT EN CURSO</span>' +
+              '<span id="qte-timer-badge" class="qte-timer' + (qteTimeLeft <= 3 ? ' urgent' : '') + '"><span id="qte-timer-text">' + qteTimeLeft.toFixed(1) + 's</span>' + perActionTag + '</span>' +
+            '</div>' +
+            '<div class="qte-track">' +
+              '<div id="qte-progress-bar" class="qte-fill" style="width: ' + pct + '%; background-color: ' + barColor + ';"></div>' +
+            '</div>' +
+            '<div id="qte-mistake-box" class="qte-mistake" style="display: ' + (qteMistakeMsg ? 'block' : 'none') + ';">' + escapeHTML(qteMistakeMsg || '') + '</div>' +
+            '<div class="qte-step-row">' +
+              '<span class="qte-step-count">Paso <strong>' + (qteStepIndex + 1) + '</strong> de ' + scene.qteConfig.sequence.length + '</span>' +
+              '<span style="color: rgba(245, 158, 11, 0.5);">•</span>' +
+              '<span class="qte-instruction">' + escapeHTML(stepLabel) + '</span>' +
+            '</div>' +
+          '</div>';
+        } else {
+          qteHudContainer.innerHTML = '';
+        }
       }
 
       // Group appended texts by blockId or unattached
@@ -1479,6 +1558,7 @@ ${VOICE_ENGINE_EMBED}
       const isSameRevealScene = prevRevealSceneId === scene.id;
       prevRevealSceneId = scene.id;
       const currentRevealKeys = new Set();
+      const revealDomIdsByKey = {};
       const newlyRevealedDomIds = [];
       const popupModalEl = document.getElementById('popup-modal');
       const isModalBlocking = !!(popupModalEl && popupModalEl.style.display && popupModalEl.style.display !== 'none');
@@ -1494,6 +1574,7 @@ ${VOICE_ENGINE_EMBED}
           const blockDomId = 'block-' + block.id;
           const blockKey = 'block:' + block.id;
           currentRevealKeys.add(blockKey);
+          revealDomIdsByKey[blockKey] = blockDomId;
           const isNewBlock = isSameRevealScene && !prevVisibleRevealKeys.has(blockKey);
           const isPendingBlock = isNewBlock && isModalBlocking;
           if (isNewBlock) newlyRevealedDomIds.push(blockDomId);
@@ -1547,6 +1628,7 @@ ${VOICE_ENGINE_EMBED}
             const appDomId = 'block-appended-' + block.id + '-' + aIdx;
             const appKey = 'app:' + block.id + ':' + aIdx;
             currentRevealKeys.add(appKey);
+            revealDomIdsByKey[appKey] = appDomId;
             const isNewApp = isSameRevealScene && !prevVisibleRevealKeys.has(appKey);
             const isPendingApp = isNewApp && isModalBlocking;
             if (isNewApp) newlyRevealedDomIds.push(appDomId);
@@ -1560,6 +1642,7 @@ ${VOICE_ENGINE_EMBED}
         const uDomId = 'unattached-appended-' + uIdx;
         const uKey = 'app:unattached:' + uIdx;
         currentRevealKeys.add(uKey);
+        revealDomIdsByKey[uKey] = uDomId;
         const isNewU = isSameRevealScene && !prevVisibleRevealKeys.has(uKey);
         const isPendingU = isNewU && isModalBlocking;
         if (isNewU) newlyRevealedDomIds.push(uDomId);
@@ -1579,7 +1662,32 @@ ${VOICE_ENGINE_EMBED}
 
       if (storyCard) storyCard.innerHTML = combinedHTML;
 
-      if (!isSameRevealScene) {
+      if (returningFromQte) {
+        deferredRevealDomIds = [];
+        var qteUnlockedDomIds = [];
+        currentRevealKeys.forEach(function(rk) {
+          if (!returningFromQte.originVisibleKeys.has(rk) && revealDomIdsByKey[rk]) {
+            qteUnlockedDomIds.push(revealDomIdsByKey[rk]);
+          }
+        });
+        if (qteUnlockedDomIds.length > 0) {
+          if (isModalBlocking) {
+            deferredRevealDomIds = qteUnlockedDomIds.slice();
+          } else {
+            triggerHtmlReveal(qteUnlockedDomIds);
+          }
+        } else if (returningFromQte.originDomId && document.getElementById(returningFromQte.originDomId)) {
+          if (isModalBlocking) {
+            deferredRevealDomIds = [returningFromQte.originDomId];
+          } else {
+            triggerHtmlReveal([returningFromQte.originDomId]);
+          }
+        } else {
+          requestAnimationFrame(function() {
+            window.scrollTo({ top: returningFromQte.originScrollY || 0, behavior: 'smooth' });
+          });
+        }
+      } else if (!isSameRevealScene) {
         deferredRevealDomIds = [];
       } else if (newlyRevealedDomIds.length > 0) {
         if (isModalBlocking) {
@@ -1587,6 +1695,11 @@ ${VOICE_ENGINE_EMBED}
         } else {
           triggerHtmlReveal(newlyRevealedDomIds);
         }
+      } else if (isSceneQTE(scene) && qteStepIndex > 0 && (qteStatus === 'active' || qteStatus === 'success') && !isModalBlocking) {
+        requestAnimationFrame(function() {
+          var qteAnchor = storyCard ? storyCard.querySelector('[data-qte-latest="true"]') : null;
+          if (qteAnchor) ensureHtmlQteRevealVisible(qteAnchor);
+        });
       }
       renderInventory();
       updateSentenceBar();
@@ -1761,6 +1874,7 @@ ${VOICE_ENGINE_EMBED}
             for (var gi2 = 0; gi2 < comboGrants[gk]; gi2++) gameState.inventory.push(gk);
           }
           if (sc.goToSceneId) {
+            captureHtmlQteReturnAnchor(sc.goToSceneId, null);
             gameState.currentSceneId = sc.goToSceneId;
           }
 
@@ -1882,6 +1996,7 @@ ${VOICE_ENGINE_EMBED}
       }
 
       if (sc.goToSceneId) {
+        captureHtmlQteReturnAnchor(sc.goToSceneId, null);
         gameState.currentSceneId = sc.goToSceneId;
       }
 
@@ -2052,7 +2167,13 @@ ${VOICE_ENGINE_EMBED}
     // ---- fin reglas de objetos ----
 
     function clickHotspot(hotspotId, event) {
-      if (event) event.stopPropagation();
+      if (event) {
+        event.stopPropagation();
+        var clickedBlockEl = (event.target && event.target.closest) ? event.target.closest('[id^="block-"], [id^="unattached-appended-"]') : null;
+        lastClickedDomId = clickedBlockEl ? clickedBlockEl.id : null;
+      } else {
+        lastClickedDomId = null;
+      }
       if (isGameOverState()) return;
 
       const scene = getActiveScene();
@@ -2269,6 +2390,10 @@ ${VOICE_ENGINE_EMBED}
             }
           }
           if (sc.goToSceneId) {
+            var hsParentBlock = (scene.textBlocks || []).find(function(b) {
+              return isWordMatchInText(hs.word, b.text);
+            });
+            captureHtmlQteReturnAnchor(sc.goToSceneId, hsParentBlock ? ('block-' + hsParentBlock.id) : null);
             gameState.currentSceneId = sc.goToSceneId;
           }
         }
@@ -2354,6 +2479,10 @@ ${VOICE_ENGINE_EMBED}
             }
           }
           if (fsc.goToSceneId) {
+            var failHsParentBlock = (scene.textBlocks || []).find(function(b) {
+              return isWordMatchInText(hs.word, b.text);
+            });
+            captureHtmlQteReturnAnchor(fsc.goToSceneId, failHsParentBlock ? ('block-' + failHsParentBlock.id) : null);
             gameState.currentSceneId = fsc.goToSceneId;
           }
         }
@@ -2405,6 +2534,8 @@ ${VOICE_ENGINE_EMBED}
           prevRevealSceneId = null;
           deferredRevealDomIds = [];
           lastRenderedSceneId = null;
+          qteReturnAnchor = null;
+          lastClickedDomId = null;
           render();
         } else {
           showPopupModal('Cargar Partida', 'No hay ninguna partida guardada en este navegador.');
@@ -2422,6 +2553,8 @@ ${VOICE_ENGINE_EMBED}
       qteMistakeMsg = null;
       qteModalQueue = [];
       currentModalOnClose = null;
+      qteReturnAnchor = null;
+      lastClickedDomId = null;
       if (lastSafeSnapshot) {
         try {
           gameState = JSON.parse(JSON.stringify(lastSafeSnapshot));
@@ -2452,6 +2585,8 @@ ${VOICE_ENGINE_EMBED}
         qteModalQueue = [];
         currentModalOnClose = null;
         lastSafeSnapshot = null;
+        qteReturnAnchor = null;
+        lastClickedDomId = null;
         gameState = {
           currentSceneId: PROJECT.initialSceneId,
           inventory: [],

@@ -210,23 +210,36 @@ const isStateGameOverOrEnding = (
 
 // Filter progressive text for QTE scenes: [1] appears after action 1, [2] after action 2, etc.
 // Preserves the author's original whitespace and inline flow without forcing newline breaks.
-const filterQTEProgressiveText = (rawText: string, stepIndex: number, isFinished: boolean): string => {
-  if (!/\[\d+\]/.test(rawText)) {
-    return rawText;
+const filterQTEProgressiveText = (
+  rawText: string,
+  stepIndex: number,
+  isFinished: boolean,
+  activeMarkStep?: number
+): string => {
+  const sanitized = rawText.replace(/<\/?qte-mark>/gi, '');
+  if (!/\[\d+\]/.test(sanitized)) {
+    return sanitized;
   }
 
   // If the QTE is not yet finished, cut off the text at the first unrevealed [N] tag (where N > stepIndex)
-  let visibleText = rawText;
+  let visibleText = sanitized;
   if (!isFinished) {
     const regex = /\[(\d+)\]/g;
     let match: RegExpExecArray | null;
-    while ((match = regex.exec(rawText)) !== null) {
+    while ((match = regex.exec(sanitized)) !== null) {
       const stepNum = parseInt(match[1], 10);
       if (stepNum > stepIndex) {
-        visibleText = rawText.slice(0, match.index);
+        visibleText = sanitized.slice(0, match.index);
         break;
       }
     }
+  }
+
+  // Optionally mark the boundary of the newly unlocked [N] step so the player never loses sight of it below the fold
+  if (activeMarkStep && activeMarkStep > 0) {
+    visibleText = visibleText
+      .replace(new RegExp(`\\s+\\[${activeMarkStep}\\](?=[,.;:!?])`, 'g'), '<qte-mark></qte-mark>')
+      .replace(new RegExp(`\\[${activeMarkStep}\\][ \\t]?`, 'g'), '<qte-mark></qte-mark>');
   }
 
   // Remove revealed [N] tags cleanly:
@@ -390,7 +403,6 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   // Quick Time Event (QTE) State
   const [qteTimeLeft, setQteTimeLeft] = useState<number>(0);
   const [qteStepIndex, setQteStepIndex] = useState<number>(0);
-  const [qteActionsUsed, setQteActionsUsed] = useState<number>(0);
   const [qteStatus, setQteStatus] = useState<'active' | 'success' | 'failed' | 'idle'>('idle');
   const [qteMistakeMsg, setQteMistakeMsg] = useState<string | null>(null);
 
@@ -424,10 +436,35 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   // inicio: tanto la página como la tarjeta narrativa, que en modo cabecera
   // colapsada en pantallas anchas es un contenedor con scroll propio.
   const narrativeRef = useRef<HTMLDivElement>(null);
+  const qteHudRef = useRef<HTMLDivElement>(null);
+  const lastClickedContainerIdRef = useRef<string | null>(null);
+  const qteReturnAnchorRef = useRef<{
+    originSceneId: string;
+    qteSceneId: string;
+    originDomId: string | null;
+    originVisibleKeys: Set<string>;
+    originScrollTop: number;
+    originWindowScrollY: number;
+  } | null>(null);
+  const pendingFallbackScrollRef = useRef<{ top: number; windowY: number } | null>(null);
+
   useEffect(() => {
     setActiveVerb(null);
     setSelectedInventoryItemId(null);
     setContextMenu(null);
+    const anchor = qteReturnAnchorRef.current;
+    const prevSceneId = prevRevealSnapshotRef.current.sceneId;
+    const isReturningFromQte = !!(
+      anchor &&
+      prevSceneId === anchor.qteSceneId &&
+      gameState.currentSceneId === anchor.originSceneId
+    );
+    if (isReturningFromQte) {
+      return;
+    }
+    if (!anchor || gameState.currentSceneId !== anchor.qteSceneId) {
+      qteReturnAnchorRef.current = null;
+    }
     narrativeRef.current?.scrollTo({ top: 0 });
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [gameState.currentSceneId]);
@@ -449,6 +486,39 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     keys: new Set(),
   });
 
+  const captureQteReturnAnchor = (targetSceneId?: string, explicitBlockId?: string | null) => {
+    if (!targetSceneId || targetSceneId === gameState.currentSceneId) return;
+    const targetScene = project.scenes.find((s) => s.id === targetSceneId);
+    const isTargetQTE = !!(
+      targetScene &&
+      (targetScene.type === 'qte' || targetScene.qteConfig) &&
+      targetScene.qteConfig?.sequence &&
+      targetScene.qteConfig.sequence.length > 0
+    );
+    if (!isTargetQTE || !targetScene) return;
+
+    const originDomId =
+      lastClickedContainerIdRef.current ||
+      (explicitBlockId ? `block-${explicitBlockId}` : null);
+
+    qteReturnAnchorRef.current = {
+      originSceneId: gameState.currentSceneId,
+      qteSceneId: targetScene.id,
+      originDomId,
+      originVisibleKeys: new Set(prevRevealSnapshotRef.current.keys),
+      originScrollTop: narrativeRef.current?.scrollTop || 0,
+      originWindowScrollY: window.scrollY || 0,
+    };
+  };
+
+  const getStickySafeTopMargin = () => {
+    const stickyTopBase = isHeaderCollapsed ? 48 : 62;
+    if (qteHudRef.current) {
+      return stickyTopBase + qteHudRef.current.getBoundingClientRect().height + 16;
+    }
+    return Math.min(140, Math.round(window.innerHeight * 0.2));
+  };
+
   const scrollToRevealedElement = (el: HTMLElement) => {
     const container = narrativeRef.current;
     const isContainerScrollable =
@@ -461,14 +531,60 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
       const elRect = el.getBoundingClientRect();
       const targetTop = Math.max(0, container.scrollTop + (elRect.top - containerRect.top) - 24);
       container.scrollTo({ top: targetTop, behavior: 'smooth' });
-      if (containerRect.top < 16 || containerRect.top > window.innerHeight * 0.6) {
+      if (containerRect.top < getStickySafeTopMargin() || containerRect.top > window.innerHeight * 0.6) {
         container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     } else {
       const elRect = el.getBoundingClientRect();
-      const desiredOffset = Math.min(140, Math.round(window.innerHeight * 0.2));
+      const desiredOffset = getStickySafeTopMargin();
       const targetY = Math.max(0, window.scrollY + elRect.top - desiredOffset);
       window.scrollTo({ top: targetY, behavior: 'smooth' });
+    }
+  };
+
+  const ensureQteRevealVisible = (anchorEl: HTMLElement) => {
+    const blockEl =
+      (anchorEl.closest('[id^="block-"], [id^="unattached-appended-"]') as HTMLElement) ||
+      anchorEl.parentElement ||
+      anchorEl;
+    const rawAnchorRect = anchorEl.getBoundingClientRect();
+    const blockRect = blockEl.getBoundingClientRect();
+    const anchorRect =
+      rawAnchorRect.height === 0 && rawAnchorRect.top === 0 ? blockRect : rawAnchorRect;
+
+    const container = narrativeRef.current;
+    const isContainerScrollable =
+      container &&
+      container.scrollHeight > container.clientHeight + 4 &&
+      ['auto', 'scroll'].includes(window.getComputedStyle(container).overflowY);
+
+    if (isContainerScrollable && container) {
+      const cRect = container.getBoundingClientRect();
+      if (anchorRect.top < cRect.top + 12) {
+        const targetTop = Math.max(0, container.scrollTop + (anchorRect.top - cRect.top) - 20);
+        container.scrollTo({ top: targetTop, behavior: 'smooth' });
+      } else if (blockRect.bottom > cRect.bottom - 12) {
+        const neededDown = blockRect.bottom - (cRect.bottom - 16);
+        const maxDown = Math.max(0, anchorRect.top - (cRect.top + 16));
+        const delta = Math.min(neededDown, maxDown);
+        if (delta > 2) {
+          container.scrollTo({ top: container.scrollTop + delta, behavior: 'smooth' });
+        }
+      }
+    } else {
+      const safeTop = getStickySafeTopMargin();
+      const safeBottom = window.innerHeight - 24;
+      if (anchorRect.top < safeTop) {
+        const targetY = Math.max(0, window.scrollY + anchorRect.top - safeTop);
+        window.scrollTo({ top: targetY, behavior: 'smooth' });
+      } else if (blockRect.bottom > safeBottom) {
+        const neededDown = blockRect.bottom - safeBottom;
+        const maxDown = Math.max(0, anchorRect.top - safeTop);
+        const delta = Math.min(neededDown, maxDown);
+        if (delta > 2) {
+          window.scrollTo({ top: window.scrollY + delta, behavior: 'smooth' });
+        }
+      }
     }
   };
 
@@ -503,9 +619,9 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   const lastAudioSceneIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const isNewScene = !!currentScene && lastAudioSceneIdRef.current !== gameState.currentSceneId;
-    if (isNewScene) setQteMistakeMsg(null);
+    setQteMistakeMsg(null);
     if (currentScene) {
+      const isNewScene = lastAudioSceneIdRef.current !== gameState.currentSceneId;
       if (isNewScene) {
         lastAudioSceneIdRef.current = gameState.currentSceneId;
         playedBlockSoundIdsRef.current.clear();
@@ -551,18 +667,13 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         });
       }
     }
-    // QTE progress must not reset when an action changes flags or inventory in the same scene.
-    if (isNewScene) {
-      if (currentScene && (currentScene.type === 'qte' || currentScene.qteConfig) && currentScene.qteConfig?.sequence?.length) {
-        const timeLimit = currentScene.qteConfig.timeLimitSeconds || 10;
-        setQteTimeLeft(timeLimit);
-        setQteStepIndex(0);
-        setQteActionsUsed(0);
-        setQteStatus('active');
-      } else {
-        setQteActionsUsed(0);
-        setQteStatus('idle');
-      }
+    if (currentScene && (currentScene.type === 'qte' || currentScene.qteConfig) && currentScene.qteConfig?.sequence?.length) {
+      const timeLimit = currentScene.qteConfig.timeLimitSeconds || 10;
+      setQteTimeLeft(timeLimit);
+      setQteStepIndex(0);
+      setQteStatus('active');
+    } else {
+      setQteStatus('idle');
     }
   }, [gameState.currentSceneId, currentScene?.id, gameState.flags, gameState.inventory, project.customSounds]);
 
@@ -675,12 +786,69 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     const currentKeySet = new Set(currentRevealItems.map((it) => it.key));
 
     if (!isSameScene) {
+      const anchor = qteReturnAnchorRef.current;
+      const isReturningFromQte = !!(
+        anchor &&
+        snap.projectId === projId &&
+        snap.sceneId === anchor.qteSceneId &&
+        sceneId === anchor.originSceneId &&
+        !(histLen === 0 && snap.historyLen > 0)
+      );
+
       prevRevealSnapshotRef.current = {
         projectId: projId,
         sceneId,
         historyLen: histLen,
         keys: currentKeySet,
       };
+
+      if (isReturningFromQte && anchor) {
+        qteReturnAnchorRef.current = null;
+        const newlyAddedAfterQte = currentRevealItems.filter(
+          (it) => !anchor.originVisibleKeys.has(it.key)
+        );
+        const hasBlockingModal = !!(modalFeedback || modalQueue.length > 0 || activeDialogue);
+
+        if (newlyAddedAfterQte.length > 0) {
+          if (hasBlockingModal) {
+            setDeferredRevealKeys(new Set(newlyAddedAfterQte.map((it) => it.key)));
+          } else {
+            if (deferredRevealKeys.size > 0) setDeferredRevealKeys(new Set());
+            setHighlightedRevealKeys(new Set(newlyAddedAfterQte.map((it) => it.key)));
+            setPendingScrollDomId(newlyAddedAfterQte[0].domId);
+          }
+        } else {
+          if (deferredRevealKeys.size > 0) setDeferredRevealKeys(new Set());
+          const matchedOriginItem = anchor.originDomId
+            ? currentRevealItems.find((it) => it.domId === anchor.originDomId)
+            : null;
+          if (matchedOriginItem) {
+            setHighlightedRevealKeys(new Set([matchedOriginItem.key]));
+            setPendingScrollDomId(matchedOriginItem.domId);
+          } else if (anchor.originDomId) {
+            setPendingScrollDomId(anchor.originDomId);
+          } else {
+            pendingFallbackScrollRef.current = {
+              top: anchor.originScrollTop,
+              windowY: anchor.originWindowScrollY,
+            };
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                const fb = pendingFallbackScrollRef.current;
+                pendingFallbackScrollRef.current = null;
+                if (!fb) return;
+                if (narrativeRef.current && narrativeRef.current.scrollHeight > narrativeRef.current.clientHeight + 4) {
+                  narrativeRef.current.scrollTo({ top: fb.top, behavior: 'smooth' });
+                } else {
+                  window.scrollTo({ top: fb.windowY, behavior: 'smooth' });
+                }
+              });
+            });
+          }
+        }
+        return;
+      }
+
       if (deferredRevealKeys.size > 0) setDeferredRevealKeys(new Set());
       if (highlightedRevealKeys.size > 0) setHighlightedRevealKeys(new Set());
       setPendingScrollDomId(null);
@@ -766,11 +934,26 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   }, [pendingScrollDomId]);
 
   useEffect(() => {
-    if (
-      qteStatus !== 'active' ||
-      !currentScene?.qteConfig ||
-      currentScene.qteConfig.consumeAttemptOnAnyAction
-    ) return;
+    if (!currentScene?.qteConfig || qteStepIndex <= 0) return;
+    if (qteStatus !== 'active' && qteStatus !== 'success') return;
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const anchor = narrativeRef.current?.querySelector('[data-qte-latest="true"]') as HTMLElement | null;
+        if (anchor) {
+          ensureQteRevealVisible(anchor);
+        }
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [qteStepIndex, qteStatus, gameState.currentSceneId]);
+
+  useEffect(() => {
+    if (qteStatus !== 'active' || !currentScene?.qteConfig) return;
 
     const interval = setInterval(() => {
       setQteTimeLeft((prev) => {
@@ -784,7 +967,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     }, 100);
 
     return () => clearInterval(interval);
-  }, [qteStatus, gameState.currentSceneId, currentScene?.id, currentScene?.qteConfig?.consumeAttemptOnAnyAction]);
+  }, [qteStatus, gameState.currentSceneId, currentScene?.id]);
 
   const handleQTEFail = (reasonMsg?: string) => {
     setQteStatus('failed');
@@ -926,28 +1109,6 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     }
   };
 
-
-  /**
-   * Consumes an opportunity for non-hotspot actions while an opportunity-based QTE is active.
-   * Returns null outside this mode; otherwise indicates whether the limit was reached.
-   */
-  const consumeQTEOpportunity = (completesSequence = false): { failed: boolean; remaining: number } | null => {
-    const config = currentScene?.qteConfig;
-    if (qteStatus !== 'active' || !config?.consumeAttemptOnAnyAction) return null;
-
-    const maxActions = Math.max(1, Math.floor(Number(config.maxActions) || 4));
-    const nextCount = qteActionsUsed + 1;
-    const remaining = Math.max(0, maxActions - nextCount);
-    setQteActionsUsed(nextCount);
-
-    if (!completesSequence && nextCount >= maxActions) {
-      handleQTEFail(config.onFailMessage || 'Se han agotado las oportunidades.');
-      return { failed: true, remaining: 0 };
-    }
-
-    return { failed: false, remaining };
-  };
-
   const checkConditions = (visibleFlags?: Record<string, boolean>, hiddenFlags?: Record<string, boolean>) => {
     if (visibleFlags) {
       for (const [k, v] of Object.entries(visibleFlags)) {
@@ -997,6 +1158,8 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
   const handleRetryBeforeDeath = () => {
     playSound('select');
+    qteReturnAnchorRef.current = null;
+    lastClickedContainerIdRef.current = null;
     setActiveVerb(null);
     setSelectedInventoryItemId(null);
     setContextMenu(null);
@@ -1124,12 +1287,6 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     }
 
     if (selectedInventoryItemId && selectedInventoryItemId !== itemId) {
-      const opportunity = consumeQTEOpportunity();
-      if (opportunity?.failed) {
-        setSelectedInventoryItemId(null);
-        setActiveVerb(null);
-        return;
-      }
       const sourceItemId = selectedInventoryItemId;
       const sourceItem = project.inventoryItems.find((i) => i.id === sourceItemId);
 
@@ -1154,6 +1311,9 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         const isGameOverCombo = !!rule.isGameOver || !!sc?.isGameOver;
         const soundToPlay = rule.soundEffect || 'pickup';
         playSound(soundToPlay, project.customSounds);
+        if (sc?.goToSceneId) {
+          captureQteReturnAnchor(sc.goToSceneId);
+        }
 
         setGameState((prev: any) => {
           const newFlags = { ...prev.flags, ...(sc?.setFlags || {}) };
@@ -1261,8 +1421,6 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   };
 
   const handleUseInventoryItemDirectly = (targetItem: InventoryItem) => {
-    const opportunity = consumeQTEOpportunity();
-    if (opportunity?.failed) return;
     playSound('select');
     const rule = targetItem.useEffectAction;
 
@@ -1301,6 +1459,9 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     const isGameOverUse = !!rule.isGameOver || !!sc?.isGameOver;
     const soundToPlay = rule.soundEffect || 'pickup';
     playSound(soundToPlay, project.customSounds);
+    if (sc?.goToSceneId) {
+      captureQteReturnAnchor(sc.goToSceneId);
+    }
 
     setGameState((prev: any) => {
       const newFlags = { ...prev.flags, ...(sc?.setFlags || {}) };
@@ -1391,37 +1552,18 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         if ((isHotspotMatch || isWordMatch) && isVerbMatch) {
           setQteMistakeMsg(null);
           const nextStep = qteStepIndex + 1;
-          const completesSequence = nextStep >= currentScene.qteConfig.sequence.length;
-          const opportunity = consumeQTEOpportunity(completesSequence);
-
-          // A successful final action takes priority over exhausting the last opportunity.
-          if (completesSequence) {
+          if (nextStep >= currentScene.qteConfig.sequence.length) {
             handleQTESuccess();
-          } else if (opportunity?.failed) {
-            return;
           } else {
             setQteStepIndex(nextStep);
             playSound('pickup');
-            // Reset timer if per-action mode is active (timed QTEs only).
-            if (!currentScene.qteConfig.consumeAttemptOnAnyAction && currentScene.qteConfig.timerMode === 'per_action') {
+            // Reset timer if per-action mode is active
+            if (currentScene.qteConfig.timerMode === 'per_action') {
               setQteTimeLeft(currentScene.qteConfig.timeLimitSeconds || 10);
             }
-            if (opportunity) {
-              setQteMistakeMsg(`Oportunidades restantes: ${opportunity.remaining}`);
-              setTimeout(() => setQteMistakeMsg(null), 1800);
-            }
-          }
-        } else if (currentScene.qteConfig.consumeAttemptOnAnyAction) {
-          // Any executed action consumes an opportunity in this mode, including incorrect actions.
-          playSound('error');
-          const opportunity = consumeQTEOpportunity(false);
-          if (opportunity?.failed) return;
-          if (opportunity) {
-            setQteMistakeMsg(`⚠️ Acción incorrecta. Oportunidades restantes: ${opportunity.remaining}`);
-            setTimeout(() => setQteMistakeMsg(null), 1800);
           }
         } else {
-          // Timed QTEs keep their existing time penalty for incorrect actions.
+          // Wrong action in QTE sequence -> Penalize time & show inline HUD feedback
           playSound('error');
           const penalty = 2.5;
           setQteMistakeMsg(`⚠️ ¡Acción o verbo incorrecto! (-${penalty}s)`);
@@ -1668,6 +1810,9 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         !!gameState.isGameOver || isRuleGameOver
       );
       const isAutosaveTriggered = !isSceneTesting && !isPredictedTerminal && (willPickupItem || !!sc?.goToSceneId);
+      if (sc?.goToSceneId) {
+        captureQteReturnAnchor(sc.goToSceneId, parentBlock?.id);
+      }
 
       setGameState((prev: any) => {
         const newFlags = { ...prev.flags, ...(sc?.setFlags || {}) };
@@ -1857,6 +2002,9 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
       } else {
         playSound('error');
       }
+      if (fsc?.goToSceneId) {
+        captureQteReturnAnchor(fsc.goToSceneId, parentBlock?.id);
+      }
 
       setGameState((prev: any) => {
         const currentUsedHotspots = prev.usedHotspotIds || [];
@@ -1951,6 +2099,11 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   const handleWordClick = (hotspot: Hotspot, e: React.MouseEvent) => {
     e.stopPropagation();
     if (isSceneGameOver || gameState.isGameOver || modalFeedback?.isGameOver) return;
+
+    const clickedContainerEl = (e.currentTarget as HTMLElement).closest(
+      '[id^="block-"], [id^="unattached-appended-"]'
+    );
+    lastClickedContainerIdRef.current = clickedContainerEl ? clickedContainerEl.id : null;
 
     // Fast QTE action: If QTE is active and current step accepts any verb (no expectedVerb specified),
     // clicking the action word directly triggers the action without needing to pick a verb first!
@@ -2082,8 +2235,6 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     character: GameCharacter,
     blockId?: string
   ) => {
-    const opportunity = consumeQTEOpportunity();
-    if (opportunity?.failed) return;
     playSound(option.soundEffect || 'select', project.customSounds);
 
     // Item giving (+Objeto)
@@ -2142,6 +2293,9 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
       ? dialogueItemIds
       : [];
     const updatedReceived = [...currentReceived, ...itemsToAdd];
+    if (option.goToSceneId) {
+      captureQteReturnAnchor(option.goToSceneId, activeDialogue?.blockId);
+    }
 
     setGameState((prev: any) => {
       const newFlags = { ...prev.flags, ...(option.setFlags || {}) };
@@ -2282,6 +2436,12 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
           );
 
           switch (tagName) {
+            case 'qte-mark':
+              return (
+                <span key={keyIndex} data-qte-latest="true" aria-hidden="true">
+                  &#8203;
+                </span>
+              );
             case 'h1':
               return (
                 <h1 key={keyIndex} className={`text-2xl sm:text-3xl font-extrabold my-3 tracking-tight border-b pb-1 ${isSepia ? 'text-[#822b16] border-[#822b16]/30' : 'text-amber-300 border-amber-500/20'}`}>
@@ -2360,7 +2520,8 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     let processedText = rawText;
     if (isQTEScene) {
       const isFinished = qteStatus === 'success';
-      processedText = filterQTEProgressiveText(rawText, qteStepIndex, isFinished);
+      const activeMarkStep = qteStepIndex > 0 && (qteStatus === 'active' || qteStatus === 'success') ? qteStepIndex : 0;
+      processedText = filterQTEProgressiveText(rawText, qteStepIndex, isFinished, activeMarkStep);
     } else {
       // In non-QTE scenes, strip [N] tags so they never appear to players
       processedText = rawText
@@ -2849,10 +3010,72 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
           </div>
         )}
 
+        {/* Quick Time Event (QTE) Live HUD Banner - Sticky outside narrative card so it stays visible while scrolling */}
+        {isQTEScene && qteStatus === 'active' && currentScene?.qteConfig && (
+          <div
+            ref={qteHudRef}
+            className={`sticky ${isHeaderCollapsed ? 'top-[46px]' : 'top-[58px]'} z-20 bg-gradient-to-r from-amber-950 via-red-950 to-amber-950 border-2 border-amber-500/80 rounded-2xl p-3.5 sm:p-4 shadow-[0_14px_34px_rgba(0,0,0,0.65)] space-y-2.5 sm:space-y-3 animate-pulse-subtle`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 text-amber-300 font-black text-xs sm:text-sm uppercase tracking-wider">
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5 text-amber-400 animate-bounce shrink-0" />
+                <span>⚡ QUICK TIME EVENT EN CURSO</span>
+              </div>
+              <div className={`font-mono text-base sm:text-lg px-3 py-1 rounded-xl border font-black flex items-center gap-1.5 ${
+                qteTimeLeft <= 3
+                  ? 'bg-rose-600 text-white border-rose-400 animate-ping'
+                  : 'bg-black/70 text-amber-300 border-amber-500/50'
+              }`}>
+                <span>⏱️</span>
+                <span>{qteTimeLeft.toFixed(1)}s</span>
+                {currentScene.qteConfig.timerMode === 'per_action' && (
+                  <span className="text-[10px] text-amber-300/80 font-sans font-bold bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30 ml-1">
+                    / acción
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Countdown Progress Bar */}
+            <div className="w-full h-3.5 bg-black/70 rounded-full overflow-hidden border border-amber-500/40 p-0.5 shadow-inner">
+              <div
+                className={`h-full rounded-full transition-all duration-100 ${
+                  qteTimeLeft <= 3 ? 'bg-rose-500' : qteTimeLeft <= 6 ? 'bg-amber-400' : 'bg-emerald-400'
+                }`}
+                style={{
+                  width: `${Math.max(0, Math.min(100, (qteTimeLeft / (currentScene.qteConfig.timeLimitSeconds || 10)) * 100))}%`,
+                }}
+              />
+            </div>
+
+            {/* Mistake warning message indicator */}
+            {qteMistakeMsg && (
+              <div className="bg-rose-600/95 text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-rose-400 shadow-md flex items-center justify-center gap-2 animate-bounce">
+                <span>{qteMistakeMsg}</span>
+              </div>
+            )}
+
+            {/* Step indicator - Centered instruction */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 text-xs border-t border-amber-500/20 pt-2.5 text-center">
+              <span className="text-amber-200/80 font-medium">
+                Paso <strong className="text-amber-300 text-sm font-black">{qteStepIndex + 1}</strong> de {currentScene.qteConfig.sequence.length}
+              </span>
+              <span className="hidden sm:inline text-amber-500/50">•</span>
+              <span className="bg-amber-500/25 text-amber-200 border border-amber-500/50 px-4 py-1.5 rounded-full font-bold shadow-sm text-xs sm:text-sm text-center inline-block">
+                {currentScene.qteConfig.sequence[qteStepIndex]?.label || '¡Realiza la acción requerida!'}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Main Narrative Card (~60% height in focus mode) */}
         {/* En móvil no se usa scroll anidado: la tarjeta crece y scrollea la página */}
         <div ref={narrativeRef} className={`p-5 sm:p-7 rounded-2xl border ${themeConfig.cardBorderClass} ${themeConfig.cardBgClass} shadow-xl relative overflow-hidden transition-all ${
-          isHeaderCollapsed ? 'md:max-h-[58dvh] md:min-h-[260px] md:overflow-y-auto' : ''
+          isHeaderCollapsed
+            ? (isQTEScene && qteStatus === 'active'
+                ? 'md:max-h-[44dvh] md:min-h-[200px] md:overflow-y-auto'
+                : 'md:max-h-[58dvh] md:min-h-[260px] md:overflow-y-auto')
+            : ''
         }`}>
           {/* Subtle grid pattern background */}
           <div
@@ -2862,73 +3085,6 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
               backgroundSize: '40px 40px',
             }}
           />
-
-          {/* Quick Time Event (QTE) Live HUD Banner */}
-          {isQTEScene && qteStatus === 'active' && currentScene?.qteConfig && (
-            <div className="bg-gradient-to-r from-amber-950/90 via-red-950/90 to-amber-950/90 border-2 border-amber-500/70 rounded-2xl p-4 shadow-2xl space-y-3 mb-6 animate-pulse-subtle relative z-20">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-amber-300 font-black text-xs sm:text-sm uppercase tracking-wider">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-amber-400 animate-bounce shrink-0" />
-                  <span>⚡ QUICK TIME EVENT EN CURSO</span>
-                </div>
-                {currentScene.qteConfig.consumeAttemptOnAnyAction ? (
-                  <div className="font-mono text-base sm:text-lg px-3 py-1 rounded-xl border font-black flex items-center gap-1.5 bg-black/70 text-amber-300 border-amber-500/50">
-                    <span>⚡</span>
-                    <span>{Math.max(0, (currentScene.qteConfig.maxActions || 4) - qteActionsUsed)} / {Math.max(1, currentScene.qteConfig.maxActions || 4)}</span>
-                    <span className="text-[10px] text-amber-300/80 font-sans font-bold bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30 ml-1">
-                      oportunidades
-                    </span>
-                  </div>
-                ) : (
-                  <div className={`font-mono text-base sm:text-lg px-3 py-1 rounded-xl border font-black flex items-center gap-1.5 ${
-                    qteTimeLeft <= 3
-                      ? 'bg-rose-600 text-white border-rose-400 animate-ping'
-                      : 'bg-black/70 text-amber-300 border-amber-500/50'
-                  }`}>
-                    <span>⏱️</span>
-                    <span>{qteTimeLeft.toFixed(1)}s</span>
-                    {currentScene.qteConfig.timerMode === 'per_action' && (
-                      <span className="text-[10px] text-amber-300/80 font-sans font-bold bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30 ml-1">
-                        / acción
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Countdown Progress Bar */}
-              {!currentScene.qteConfig.consumeAttemptOnAnyAction && (
-                <div className="w-full h-3.5 bg-black/70 rounded-full overflow-hidden border border-amber-500/40 p-0.5 shadow-inner">
-                  <div
-                    className={`h-full rounded-full transition-all duration-100 ${
-                      qteTimeLeft <= 3 ? 'bg-rose-500' : qteTimeLeft <= 6 ? 'bg-amber-400' : 'bg-emerald-400'
-                    }`}
-                    style={{
-                      width: `${Math.max(0, Math.min(100, (qteTimeLeft / (currentScene.qteConfig.timeLimitSeconds || 10)) * 100))}%`,
-                    }}
-                  />
-                </div>
-              )}
-
-              {/* Mistake warning message indicator */}
-              {qteMistakeMsg && (
-                <div className="bg-rose-600/90 text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-rose-400 shadow-md flex items-center justify-center gap-2 animate-bounce">
-                  <span>{qteMistakeMsg}</span>
-                </div>
-              )}
-
-              {/* Step indicator - Centered instruction */}
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 text-xs border-t border-amber-500/20 pt-2.5 text-center">
-                <span className="text-amber-200/80 font-medium">
-                  Paso <strong className="text-amber-300 text-sm font-black">{qteStepIndex + 1}</strong> de {currentScene.qteConfig.sequence.length}
-                </span>
-                <span className="hidden sm:inline text-amber-500/50">•</span>
-                <span className="bg-amber-500/25 text-amber-200 border border-amber-500/50 px-4 py-1.5 rounded-full font-bold shadow-sm text-xs sm:text-sm text-center inline-block">
-                  {currentScene.qteConfig.sequence[qteStepIndex]?.label || '¡Realiza la acción requerida!'}
-                </span>
-              </div>
-            </div>
-          )}
 
           {/* Main Story Text Blocks & Interleaved Appended Paragraphs */}
           <div className={`space-y-6 text-lg leading-relaxed ${themeConfig.textMainClass} relative z-10`}>
