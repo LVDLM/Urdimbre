@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Hotspot, ActionRule, GameProject, VerbType, SoundEffectType, SOUND_EFFECT_OPTIONS, DialogueBlock } from '../../types';
+import { Hotspot, ActionRule, GameProject, VerbType, SoundEffectType, SOUND_EFFECT_OPTIONS, DialogueBlock, GameCharacter } from '../../types';
 import { ALL_VERBS, getProjectVerbs } from '../../utils/verbs';
 import { playSound, getAllMergedSounds, stopAllAudio } from '../../utils/audio';
 import { DialogueEditor } from './DialogueEditor';
@@ -13,6 +13,7 @@ interface HotspotEditorModalProps {
   onSave: (updatedHotspot: Hotspot) => void;
   onClose: () => void;
   onAddGlobalFlag?: (flagKey: string) => void;
+  onEnsureCharacter?: (name: string, description?: string) => GameCharacter;
 }
 
 export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
@@ -21,6 +22,7 @@ export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
   onSave,
   onClose,
   onAddGlobalFlag,
+  onEnsureCharacter,
 }) => {
   const projectVerbs = getProjectVerbs(project);
   const [currentHotspot, setCurrentHotspot] = useState<Hotspot>({ ...hotspot });
@@ -110,6 +112,34 @@ export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
   } | null>(null);
 
   const globalFlagKeys = Object.keys(project.globalFlags || {});
+
+  const rawHotspotCharLabel = (currentHotspot.label || currentHotspot.word || '').trim();
+  const suggestedCharName = rawHotspotCharLabel
+    ? rawHotspotCharLabel.charAt(0).toUpperCase() + rawHotspotCharLabel.slice(1)
+    : 'Personaje';
+
+  const findMatchingCharacter = () =>
+    (project.characters || []).find(
+      (c) => c.name.trim().toLowerCase() === suggestedCharName.toLowerCase()
+    );
+
+  const ensureCharacterForHotspot = (): string | undefined => {
+    const existingSelectedId = dialogue?.characterId || characterId;
+    if (existingSelectedId) return existingSelectedId;
+
+    const matched = findMatchingCharacter();
+    if (matched) {
+      setCharacterId(matched.id);
+      return matched.id;
+    }
+
+    if (onEnsureCharacter) {
+      const created = onEnsureCharacter(suggestedCharName);
+      setCharacterId(created.id);
+      return created.id;
+    }
+    return undefined;
+  };
 
   const handleEditAction = (action: ActionRule) => {
     setEditingActionId(action.id);
@@ -277,12 +307,21 @@ export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
       actionRuleId = `act_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     }
 
+    let resolvedCharId = verb === 'hablar' ? (dialogue?.characterId || characterId) : undefined;
+    if (verb === 'hablar' && !resolvedCharId) {
+      resolvedCharId = ensureCharacterForHotspot();
+    }
+    const syncedDialogue =
+      verb === 'hablar' && dialogue
+        ? { ...dialogue, characterId: dialogue.characterId || resolvedCharId || '' }
+        : undefined;
+
     const newRule: ActionRule = {
       id: actionRuleId,
       verb,
       responseMessage: msg,
-      characterId: verb === 'hablar' ? (dialogue?.characterId || characterId) : undefined,
-      dialogue: verb === 'hablar' ? dialogue : undefined,
+      characterId: verb === 'hablar' ? resolvedCharId : undefined,
+      dialogue: syncedDialogue,
       requiredItemId: requiredItemId || undefined,
       requiredFlags: Object.keys(requiredFlagsMap).length > 0 ? { ...requiredFlagsMap } : undefined,
       isGameOver: isGameOver || hasSuccessTag || undefined,
@@ -615,7 +654,16 @@ export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Verbo / Acción del Jugador</label>
                 <select
                   value={verb}
-                  onChange={(e) => setVerb(e.target.value as VerbType)}
+                  onChange={(e) => {
+                    const nextVerb = e.target.value as VerbType;
+                    setVerb(nextVerb);
+                    if (nextVerb === 'hablar' && !characterId && !dialogue?.characterId) {
+                      const matched = findMatchingCharacter();
+                      if (matched) {
+                        setCharacterId(matched.id);
+                      }
+                    }
+                  }}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:ring-1 focus:ring-amber-500 font-semibold"
                 >
                   {projectVerbs.map((v) => (
@@ -766,60 +814,132 @@ export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
             })()}
 
             {/* Dialogue Launcher for Hablar action */}
-            {verb === 'hablar' && (
-              <div className="bg-slate-900 border border-amber-500/40 rounded-xl p-4 space-y-3 shadow-lg">
-                <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
-                  <h5 className="font-bold text-xs text-amber-300 uppercase tracking-wider flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4 text-amber-400" />
-                    <span>Configuración de Conversación ("Hablar con")</span>
-                  </h5>
-                </div>
+            {verb === 'hablar' && (() => {
+              const selectedCharId = characterId || dialogue?.characterId || '';
+              const matchedChar = findMatchingCharacter();
+              const hasAssignedChar = !!selectedCharId;
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Personaje con el que se Habla
-                    </label>
-                    <select
-                      value={characterId || dialogue?.characterId || ''}
-                      onChange={(e) => {
-                        const newCharId = e.target.value;
-                        setCharacterId(newCharId);
-                        if (dialogue) {
-                          setDialogue({ ...dialogue, characterId: newCharId });
-                        }
-                      }}
-                      className="w-full bg-black/60 border border-slate-700 rounded-xl px-3 py-2 text-xs text-amber-200 outline-none focus:border-amber-500 font-semibold"
-                    >
-                      <option value="">-- Seleccionar Personaje --</option>
-                      {project.characters?.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          👤 {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Árbol de Diálogo y Opciones
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsDialogueModalOpen(true)}
-                      className="w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow"
-                    >
-                      <MessageSquare className="w-4 h-4" />
-                      <span>
-                        {dialogue && dialogue.nodes && dialogue.nodes.length > 0
-                          ? `💬 Editar Árbol (${dialogue.nodes.length} Nodos)`
-                          : '➕ Crear Árbol de Diálogo'}
+              return (
+                <div className="bg-slate-900 border border-amber-500/40 rounded-xl p-4 space-y-3 shadow-lg">
+                  <div className="flex items-center justify-between border-b border-amber-500/20 pb-2 flex-wrap gap-2">
+                    <h5 className="font-bold text-xs text-amber-300 uppercase tracking-wider flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-amber-400" />
+                      <span>Configuración de Conversación ("Hablar con")</span>
+                    </h5>
+                    {hasAssignedChar && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold">
+                        👤 Personaje vinculado
                       </span>
-                    </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Personaje con el que se Habla
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={selectedCharId}
+                          onChange={(e) => {
+                            const newCharId = e.target.value;
+                            setCharacterId(newCharId || undefined);
+                            if (dialogue) {
+                              setDialogue({ ...dialogue, characterId: newCharId });
+                            }
+                          }}
+                          className="w-full bg-black/60 border border-slate-700 rounded-xl px-3 py-2 text-xs text-amber-200 outline-none focus:border-amber-500 font-semibold"
+                        >
+                          <option value="">
+                            {onEnsureCharacter && !matchedChar
+                              ? `-- Se creará "${suggestedCharName}" automáticamente --`
+                              : '-- Seleccionar Personaje --'}
+                          </option>
+                          {project.characters?.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              👤 {c.name}
+                            </option>
+                          ))}
+                        </select>
+
+                        {!hasAssignedChar && onEnsureCharacter && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newId = ensureCharacterForHotspot();
+                              if (newId && dialogue && !dialogue.characterId) {
+                                setDialogue({ ...dialogue, characterId: newId });
+                              }
+                            }}
+                            className="px-2.5 py-2 rounded-xl bg-emerald-600/80 hover:bg-emerald-500 text-white font-bold text-[11px] whitespace-nowrap transition-colors cursor-pointer shrink-0"
+                            title={`Crear personaje "${suggestedCharName}" y vincularlo ahora`}
+                          >
+                            + Crear "{suggestedCharName}"
+                          </button>
+                        )}
+                      </div>
+                      {!hasAssignedChar && onEnsureCharacter && (
+                        <p className="text-[10px] text-amber-300/80 mt-1 leading-snug">
+                          Al pulsar en diseñar la conversación o guardar la acción, "{suggestedCharName}" quedará marcado automáticamente como personaje.
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Árbol de Diálogo y Opciones
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const resolvedCharId = ensureCharacterForHotspot() || '';
+                          if (!dialogue) {
+                            const initialNodeId = `node_${Date.now()}`;
+                            setDialogue({
+                              characterId: resolvedCharId,
+                              initialNodeId,
+                              greeting: '¿Qué deseas?',
+                              insertConversationInStory: false,
+                              nodes: [
+                                {
+                                  id: initialNodeId,
+                                  title: 'Nodo 1: Saludo Inicial',
+                                  npcPrompt: 'Hola. ¿Qué se te ofrece?',
+                                  options: [
+                                    {
+                                      id: `opt_${Date.now()}_1`,
+                                      playerText: 'Hola, ¿quién eres?',
+                                      npcResponse: 'Soy un habitante de este lugar.',
+                                    },
+                                    {
+                                      id: `opt_${Date.now()}_2`,
+                                      playerText: 'No tengo tiempo para hablar.',
+                                      npcResponse: 'De acuerdo, hasta luego.',
+                                      endConversation: true,
+                                    },
+                                  ],
+                                },
+                              ],
+                            });
+                          } else if (!dialogue.characterId && resolvedCharId) {
+                            setDialogue({ ...dialogue, characterId: resolvedCharId });
+                          }
+                          setIsDialogueModalOpen(true);
+                        }}
+                        className="w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                        <span>
+                          {dialogue && dialogue.nodes && dialogue.nodes.length > 0
+                            ? `💬 Editar Diálogo (${dialogue.nodes.length} Nodos)`
+                            : `➕ Crear y Diseñar Diálogo con ${suggestedCharName}`}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Section 1 & Section 2 Consequences (Hidden for 'hablar' action, as conversation logic handles branches/consequences) */}
             {verb !== 'hablar' && (
@@ -1698,7 +1818,49 @@ export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
           </button>
           <button
             onClick={() => {
-              onSave(currentHotspot);
+              let hotspotToSave = currentHotspot;
+              if (verb === 'hablar' && dialogue) {
+                const resolvedCharId = dialogue.characterId || characterId || ensureCharacterForHotspot();
+                const syncedDlg = { ...dialogue, characterId: resolvedCharId || '' };
+                const msg = responseMessage.trim() || syncedDlg.greeting || 'Iniciando conversación...';
+
+                if (editingActionId) {
+                  hotspotToSave = {
+                    ...currentHotspot,
+                    actions: currentHotspot.actions.map((a) =>
+                      a.id === editingActionId
+                        ? {
+                            ...a,
+                            responseMessage: msg,
+                            characterId: resolvedCharId,
+                            dialogue: syncedDlg,
+                            requiredItemId: requiredItemId || undefined,
+                            requiredFlags: Object.keys(requiredFlagsMap).length > 0 ? { ...requiredFlagsMap } : undefined,
+                            soundEffect: soundEffect !== 'none' ? soundEffect : undefined,
+                          }
+                        : a
+                    ),
+                  };
+                } else if (!currentHotspot.actions.some((a) => a.verb === 'hablar')) {
+                  hotspotToSave = {
+                    ...currentHotspot,
+                    actions: [
+                      ...currentHotspot.actions,
+                      {
+                        id: `act_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                        verb: 'hablar',
+                        responseMessage: msg,
+                        characterId: resolvedCharId,
+                        dialogue: syncedDlg,
+                        requiredItemId: requiredItemId || undefined,
+                        requiredFlags: Object.keys(requiredFlagsMap).length > 0 ? { ...requiredFlagsMap } : undefined,
+                        soundEffect: soundEffect !== 'none' ? soundEffect : undefined,
+                      },
+                    ],
+                  };
+                }
+              }
+              onSave(hotspotToSave);
               onClose();
             }}
             className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow transition-colors cursor-pointer"
@@ -1793,6 +1955,8 @@ export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
               <DialogueEditor
                 project={project}
                 dialogue={dialogue}
+                suggestedCharacterName={suggestedCharName}
+                onEnsureCharacter={onEnsureCharacter}
                 onChange={(updated) => {
                   setDialogue(updated);
                   if (updated?.characterId) {

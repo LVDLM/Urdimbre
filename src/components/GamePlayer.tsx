@@ -378,24 +378,41 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     currentNodeId: string;
     dialogueBlock: DialogueBlock;
     currentNpcReply?: string;
+    lastTurnNotice?: string;
     receivedItemIds?: string[];
   } | null>(null);
 
-  const closeActiveDialogue = (currentReceivedItems?: string[]) => {
+  const closeActiveDialogue = (
+    currentReceivedItems?: string[],
+    closingMessage?: string,
+    closingCharacter?: GameCharacter
+  ) => {
     const itemsToNotify = currentReceivedItems || activeDialogue?.receivedItemIds || [];
+    const trimmedClosing = closingMessage?.trim() || '';
     if (itemsToNotify.length > 0) {
       const lastItemId = itemsToNotify[itemsToNotify.length - 1];
       const itemObj = project.inventoryItems.find((i) => i.id === lastItemId);
       if (itemObj) {
         setModalFeedback({
           type: 'action',
-          title: 'OBJETO RECIBIDO',
+          title: trimmedClosing && closingCharacter ? closingCharacter.name : 'OBJETO RECIBIDO',
+          showTitle: !!(trimmedClosing && closingCharacter),
           verbIconName: 'Plus',
           isAutosaved: true,
           itemImageUrl: itemObj.imageFileData || itemObj.imageUrl,
-          message: `¡Has conseguido: ${itemObj.name.toUpperCase()}!`,
+          message: trimmedClosing
+            ? `${trimmedClosing}\n\n¡Has conseguido: ${itemObj.name.toUpperCase()}!`
+            : `¡Has conseguido: ${itemObj.name.toUpperCase()}!`,
         });
       }
+    } else if (trimmedClosing) {
+      setModalFeedback({
+        type: 'action',
+        title: closingCharacter?.name || 'Conversación',
+        showTitle: !!closingCharacter?.name,
+        verbIconName: 'MessageSquare',
+        message: trimmedClosing,
+      });
     }
     setActiveDialogue(null);
   };
@@ -1960,14 +1977,15 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
       });
     });
 
-    let dialogueToStart: DialogueBlock | null = rule?.dialogue || parentBlock?.dialogue || null;
-    let characterToStart: GameCharacter | null =
-      (rule?.characterId ? project.characters?.find((c) => c.id === rule.characterId) : null) ||
-      (parentBlock?.characterId ? project.characters?.find((c) => c.id === parentBlock.characterId) : null) ||
-      null;
+    if (verbToUse === 'hablar' && rule) {
+      let dialogueToStart: DialogueBlock | null = rule.dialogue || parentBlock?.dialogue || null;
+      let characterToStart: GameCharacter | null =
+        (rule.characterId ? project.characters?.find((c) => c.id === rule.characterId) : null) ||
+        (dialogueToStart?.characterId ? project.characters?.find((c) => c.id === dialogueToStart.characterId) : null) ||
+        (parentBlock?.characterId ? project.characters?.find((c) => c.id === parentBlock.characterId) : null) ||
+        null;
 
-    if (verbToUse === 'hablar') {
-      if (!characterToStart || !dialogueToStart) {
+      if (!characterToStart) {
         const searchWord = (hotspot.label || hotspot.word).toLowerCase();
         const matchedChar = project.characters?.find((c) =>
           c.name.toLowerCase().includes(searchWord) || searchWord.includes(c.name.toLowerCase())
@@ -1979,53 +1997,18 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
             const blockWithDialogue = currentSceneObj?.textBlocks.find(
               (b) => b.characterId === matchedChar.id && b.dialogue
             );
-            dialogueToStart = blockWithDialogue?.dialogue || {
-              characterId: matchedChar.id,
-              greeting: rule?.responseMessage || matchedChar.description || '¿Qué deseas?',
-              nodes: [
-                {
-                  id: 'node_root',
-                  title: 'Inicio',
-                  npcPrompt: rule?.responseMessage || matchedChar.description || '¿Qué deseas?',
-                  options: [
-                    {
-                      id: 'opt_close',
-                      playerText: 'Nada por ahora.',
-                      endConversation: true,
-                    },
-                  ],
-                },
-              ],
-            };
+            dialogueToStart = blockWithDialogue?.dialogue || null;
           }
-        } else if (rule?.responseMessage || parentBlock) {
-          const charName = hotspot.label || hotspot.word;
-          const dynamicChar: GameCharacter = {
-            id: `char_dyn_${hotspot.id}`,
-            name: charName.charAt(0).toUpperCase() + charName.slice(1),
-            description: 'Personaje de la historia.',
-          };
-          characterToStart = dynamicChar;
-          const promptText = rule?.responseMessage || parentBlock?.dialogue?.greeting || 'Te observa en silencio...';
-          dialogueToStart = parentBlock?.dialogue || {
-            characterId: dynamicChar.id,
-            greeting: promptText,
-            nodes: [
-              {
-                id: 'node_root',
-                title: 'Inicio',
-                npcPrompt: promptText,
-                options: [
-                  {
-                    id: 'opt_close',
-                    playerText: 'Despedirse.',
-                    endConversation: true,
-                  },
-                ],
-              },
-            ],
-          };
         }
+      }
+
+      if (dialogueToStart && !characterToStart) {
+        const charName = hotspot.label || hotspot.word;
+        characterToStart = {
+          id: dialogueToStart.characterId || `char_dyn_${hotspot.id}`,
+          name: charName.charAt(0).toUpperCase() + charName.slice(1),
+          description: 'Personaje de la historia.',
+        };
       }
 
       if (characterToStart && dialogueToStart) {
@@ -2088,6 +2071,12 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         messageToShow = null;
       } else if (rule.responseMessage) {
         messageToShow = rule.responseMessage;
+      } else if (verbToUse === 'hablar' && !rule.stateChange?.goToSceneId && !hasItemGains && !rule.isGameOver && !rule.stateChange?.isGameOver) {
+        messageToShow =
+          (hotspot.customDefaultResponses && hotspot.customDefaultResponses['hablar']) ||
+          (project.defaultResponses && project.defaultResponses['hablar']) ||
+          verbObj?.defaultText ||
+          'No parece que vaya a responderte.';
       }
 
       const willPickupItem = hasItemGains && !alreadyDelivered;
@@ -2195,6 +2184,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
             narrativeHistory: newHistory,
             appendedTextsPerScene: newAppended,
             usedHotspotIds: newUsedHotspots,
+            usedDialogueOptionIds: prev.usedDialogueOptionIds || [],
             deliveredRuleKeys: newDeliveredKeys,
             difficulty: prev.difficulty || 'facil',
           };
@@ -2290,6 +2280,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         (hotspot.customDefaultResponses && hotspot.customDefaultResponses[verbToUse]) ||
         (selectedItemObj ? `No parece ocurrir nada al usar ${selectedItemObj.name} con ${hotspot.label || hotspot.word}.` : null) ||
         (project.defaultResponses && project.defaultResponses[verbToUse]) ||
+        verbObj?.defaultText ||
         'Eso no parece surtir efecto.';
 
       const fsc = failedRule?.failStateChange;
@@ -2561,32 +2552,46 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         ? project.inventoryItems.find((i) => i.id === option.requiredItemId)
         : null;
 
-    // Prepare response text
-    let responseText = '';
-    if (option.playerText) {
-      responseText += `— ${option.playerText}\n\n`;
-    }
-    if (option.npcResponse) {
-      responseText += `${character.name}: ${option.npcResponse}`;
-    }
+    const shouldInsertTranscript = !!activeDialogue?.dialogueBlock?.insertConversationInStory;
 
+    // Prepare item exchange notices
+    let receivedSummary = '';
     if (!dialogueAlreadyDelivered) {
       if (option.giveItems && Object.keys(option.giveItems).length > 0) {
-        const summary = Object.entries(option.giveItems)
+        receivedSummary = Object.entries(option.giveItems)
           .map(([id, qty]) => {
             const item = project.inventoryItems.find((i) => i.id === id);
             const name = item?.name || id;
-            return qty > 1 ? `${qty}x ${name}` : name;
+            return Number(qty) > 1 ? `${qty}x ${name}` : name;
           })
           .join(', ');
-        responseText += `\n\n[Recibido: ${summary}]`;
       } else if (giveItemObj) {
-        responseText += `\n\n[Recibido: ${giveItemObj.name}]`;
+        receivedSummary = giveItemObj.name;
       }
     }
-    if (consumeItemObj && !dialogueAlreadyDelivered) {
-      responseText += `\n\n[Entregado: ${consumeItemObj.name}]`;
+    const deliveredSummary = consumeItemObj && !dialogueAlreadyDelivered ? consumeItemObj.name : '';
+
+    // Prepare optional story transcript text (only inserted if dialogueBlock.insertConversationInStory is enabled)
+    let responseText = '';
+    if (shouldInsertTranscript) {
+      if (option.playerText) {
+        responseText += `— ${option.playerText}\n\n`;
+      }
+      if (option.npcResponse) {
+        responseText += `${character.name}: ${option.npcResponse}`;
+      }
+      if (receivedSummary) {
+        responseText += `\n\n[Recibido: ${receivedSummary}]`;
+      }
+      if (deliveredSummary) {
+        responseText += `\n\n[Entregado: ${deliveredSummary}]`;
+      }
     }
+
+    const turnItemNoticeParts: string[] = [];
+    if (receivedSummary) turnItemNoticeParts.push(`Recibido: ${receivedSummary}`);
+    if (deliveredSummary) turnItemNoticeParts.push(`Entregado: ${deliveredSummary}`);
+    const turnItemNotice = turnItemNoticeParts.length > 0 ? turnItemNoticeParts.join(' · ') : undefined;
 
     // Track items received during this dialogue session
     const currentReceived = activeDialogue?.receivedItemIds || [];
@@ -2597,6 +2602,30 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     if (option.goToSceneId) {
       captureQteReturnAnchor(option.goToSceneId, activeDialogue?.blockId);
     }
+
+    const dlgTargetScene = option.goToSceneId
+      ? project.scenes.find((s) => s.id === option.goToSceneId)
+      : currentScene;
+    const predictedDlgFlags = { ...gameState.flags, ...(option.setFlags || {}) };
+    const predictedDlgInv = applyItemEffects(
+      [...gameState.inventory],
+      gameState.deliveredRuleKeys,
+      {
+        addItems: option.giveItems,
+        addItemId: option.giveItemId,
+        removeItemId: option.requiredItemId && option.consumeRequiredItem ? option.requiredItemId : undefined,
+      },
+      dialogueDeliveryKey
+    ).inventory;
+    const dlgTargetFatal = !!option.isGameOver || isStateGameOverOrEnding(
+      dlgTargetScene,
+      predictedDlgFlags,
+      predictedDlgInv,
+      option.goToSceneId ? gameState.appendedTextsPerScene[option.goToSceneId] : gameState.appendedTextsPerScene[gameState.currentSceneId],
+      !!gameState.isGameOver || !!option.isGameOver
+    );
+    const shouldAutosaveDialogue =
+      !isSceneTesting && !dlgTargetFatal && ((!dialogueAlreadyDelivered && dialogueItemIds.length > 0) || !!option.goToSceneId);
 
     setGameState((prev: any) => {
       const newFlags = { ...prev.flags, ...(option.setFlags || {}) };
@@ -2621,13 +2650,14 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         nextSceneId = option.goToSceneId;
       }
 
+      // Only mark an option as spent when explicitly configured as one-time (isOneTime)
       const usedDialogueOptionIds = [...(prev.usedDialogueOptionIds || [])];
-      if (!usedDialogueOptionIds.includes(option.id)) {
+      if (option.isOneTime && !usedDialogueOptionIds.includes(option.id)) {
         usedDialogueOptionIds.push(option.id);
       }
 
       const newAppended = { ...prev.appendedTextsPerScene };
-      if (responseText.trim()) {
+      if (shouldInsertTranscript && responseText.trim()) {
         const sceneAppended = newAppended[prev.currentSceneId] || [];
         newAppended[prev.currentSceneId] = [
           ...sceneAppended,
@@ -2637,10 +2667,52 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
       if (option.appendStoryText) {
         const sceneAppended = newAppended[prev.currentSceneId] || [];
-        newAppended[prev.currentSceneId] = [
-          ...newAppended[prev.currentSceneId],
-          { text: option.appendStoryText, blockId },
-        ];
+        const isAlreadyAppended = sceneAppended.some(
+          (t: AppendedTextEntry) => (typeof t === 'string' ? t : t.text) === option.appendStoryText
+        );
+        if (!isAlreadyAppended) {
+          newAppended[prev.currentSceneId] = [
+            ...sceneAppended,
+            { text: option.appendStoryText, blockId },
+          ];
+        }
+      }
+
+      const nextIsGameOver = !!(option.isGameOver || prev.isGameOver);
+      const targetSceneObj = project.scenes.find((s) => s.id === nextSceneId);
+      const isNextStateTerminal = isStateGameOverOrEnding(
+        targetSceneObj,
+        newFlags,
+        newInventory,
+        newAppended[nextSceneId],
+        nextIsGameOver
+      );
+
+      if (shouldAutosaveDialogue && !isNextStateTerminal) {
+        const autosaveData: SaveSlotData = {
+          id: 'autosave',
+          timestamp: new Date().toLocaleString('es-ES'),
+          gameId: project.id,
+          gameTitle: project.title,
+          currentSceneId: nextSceneId,
+          currentSceneName: targetSceneObj?.name || 'Escena',
+          inventoryItemIds: newInventory,
+          flags: newFlags,
+          narrativeHistory: prev.history || [],
+          appendedTextsPerScene: newAppended,
+          usedHotspotIds: prev.usedHotspotIds || [],
+          usedDialogueOptionIds,
+          deliveredRuleKeys: newDeliveredKeys,
+          difficulty: prev.difficulty || 'facil',
+        };
+        try {
+          localStorage.setItem(
+            `text_adventure_save_slot_${project.id}_autosave`,
+            JSON.stringify(autosaveData)
+          );
+        } catch (e) {
+          console.error('Error in dialogue autosave:', e);
+        }
       }
 
       return {
@@ -2651,47 +2723,61 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         usedDialogueOptionIds,
         deliveredRuleKeys: newDeliveredKeys,
         appendedTextsPerScene: newAppended,
-        isGameOver: option.isGameOver || prev.isGameOver,
+        isGameOver: nextIsGameOver,
       };
     });
 
     // Advance tree node, update current reply, or close dialogue pop-up
-    if (option.endConversation || option.nextNodeId === 'end' || option.goToSceneId) {
-      closeActiveDialogue(updatedReceived);
+    if (option.isGameOver) {
+      setActiveDialogue(null);
+      playSound('error');
+      setModalFeedback({
+        type: 'gameover',
+        title: 'FIN DE PARTIDA',
+        verbIconName: 'Skull',
+        isGameOver: true,
+        message: option.npcResponse?.trim() || option.appendStoryText?.trim() || 'Has alcanzado un desenlace fatal.',
+      });
+    } else if (option.endConversation || option.nextNodeId === 'end' || option.goToSceneId) {
+      const closingReply =
+        !option.goToSceneId && !shouldInsertTranscript && option.npcResponse?.trim()
+          ? option.npcResponse.trim()
+          : undefined;
+      closeActiveDialogue(updatedReceived, closingReply, character);
     } else if (option.nextNodeId && option.nextNodeId !== activeDialogue?.currentNodeId) {
+      const nextNode = activeDialogue?.dialogueBlock?.nodes?.find((n) => n.id === option.nextNodeId);
+      const replyTrimmed = option.npcResponse?.trim() || '';
+      const nextPromptTrimmed = nextNode?.npcPrompt?.trim() || '';
+      const combinedReply =
+        replyTrimmed && nextPromptTrimmed && nextPromptTrimmed !== replyTrimmed
+          ? `${replyTrimmed}\n\n${nextPromptTrimmed}`
+          : replyTrimmed || undefined;
+
       setActiveDialogue((prev) =>
         prev
           ? {
               ...prev,
               currentNodeId: option.nextNodeId!,
-              currentNpcReply: undefined,
+              currentNpcReply: combinedReply,
+              lastTurnNotice: !shouldInsertTranscript ? turnItemNotice : undefined,
               receivedItemIds: updatedReceived,
             }
           : null
       );
-    } else if (option.npcResponse) {
+    } else {
       setActiveDialogue((prev) =>
         prev
           ? {
               ...prev,
-              currentNpcReply: option.npcResponse,
+              currentNpcReply: option.npcResponse?.trim() || undefined,
+              lastTurnNotice: !shouldInsertTranscript ? turnItemNotice : undefined,
               receivedItemIds: updatedReceived,
             }
           : null
       );
     }
 
-    const dlgTargetScene = option.goToSceneId
-      ? project.scenes.find((s) => s.id === option.goToSceneId)
-      : currentScene;
-    const dlgTargetFatal = !!option.isGameOver || isStateGameOverOrEnding(
-      dlgTargetScene,
-      { ...gameState.flags, ...(option.setFlags || {}) },
-      gameState.inventory,
-      option.goToSceneId ? gameState.appendedTextsPerScene[option.goToSceneId] : gameState.appendedTextsPerScene[gameState.currentSceneId],
-      !!gameState.isGameOver || !!option.isGameOver
-    );
-    if (!isSceneTesting && !dlgTargetFatal && ((giveItemObj && !dialogueAlreadyDelivered) || option.goToSceneId)) {
+    if (shouldAutosaveDialogue) {
       setShowSaveNotification(true);
       setTimeout(() => setShowSaveNotification(false), 2500);
     }
@@ -4230,9 +4316,9 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         const currentNode = nodes.find((n) => n.id === currentNodeId) || nodes[0];
         const npcPrompt = currentNpcReply || currentNode?.npcPrompt || dialogueBlock.greeting || 'Te observa en silencio...';
 
-        // Filter available player options based on flags and used options
+        // Filter available player options based on flags and one-time used options
         const availableOptions = (currentNode?.options || []).filter((opt) => {
-          if (gameState.usedDialogueOptionIds?.includes(opt.id)) {
+          if (opt.isOneTime && gameState.usedDialogueOptionIds?.includes(opt.id)) {
             return false;
           }
           if (opt.requiredItemId && !gameState.inventory.includes(opt.requiredItemId)) {
@@ -4280,9 +4366,14 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
               {/* Modal Body: NPC Prompt + Player Options */}
               <div className="p-5 overflow-y-auto space-y-4 flex-1">
                 {/* NPC Dialogue Prompt Box */}
-                <div className={`p-4 rounded-xl border text-base leading-relaxed shadow-inner ${themeConfig.actionBoxBgClass} ${themeConfig.cardBorderClass} ${themeConfig.textMainClass}`}>
+                <div className={`p-4 rounded-xl border text-base leading-relaxed shadow-inner whitespace-pre-line ${themeConfig.actionBoxBgClass} ${themeConfig.cardBorderClass} ${themeConfig.textMainClass}`}>
                   <span className={`font-bold mr-2 ${themeConfig.accentClass}`}>{character.name}:</span>
                   "{npcPrompt}"
+                  {activeDialogue.lastTurnNotice && (
+                    <div className={`mt-2.5 text-xs font-semibold ${themeConfig.accentClass}`}>
+                      [{activeDialogue.lastTurnNotice}]
+                    </div>
+                  )}
                 </div>
 
                 {/* Clickable Player Options List (Clean, without numbers or headers) */}

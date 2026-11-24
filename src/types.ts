@@ -250,6 +250,7 @@ export interface DialogueBlock {
   characterId: string;
   greeting?: string; // Default initial NPC prompt
   initialNodeId?: string; // Starting node ID
+  insertConversationInStory?: boolean; // Optional: appends player/NPC dialogue transcript to scene narrative (default false)
   nodes?: DialogueNode[]; // Tree of conversation nodes
   options?: DialogueOption[]; // Legacy flat options
 }

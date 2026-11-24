@@ -2618,7 +2618,7 @@ ${VOICE_ENGINE_EMBED}
         const fallback = (failedRule && failedRule.failMessage) ||
                          (hs.customDefaultResponses && hs.customDefaultResponses[verbToUse]) ||
                          (PROJECT.defaultResponses && PROJECT.defaultResponses[verbToUse]) ||
-                         'Eso no parece funcionar.';
+                         (verbToUse === 'hablar' ? 'No parece que vaya a responderte.' : 'Eso no parece funcionar.');
 
         if (failedRule && failedRule.failSoundEffect && failedRule.failSoundEffect !== 'none') {
           playSound(failedRule.failSoundEffect);

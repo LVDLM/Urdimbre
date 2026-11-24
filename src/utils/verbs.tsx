@@ -29,7 +29,7 @@ export const ALL_VERBS: VerbDefinition[] = [
   { id: 'usar', label: 'Usar / Activar', iconName: 'Zap', defaultText: 'Intentas usarlo o activarlo, pero no parece funcionar.' },
   { id: 'abrir', label: 'Abrir / Destapar', iconName: 'DoorOpen', defaultText: 'Intentas abrirlo, pero no cede o ya está abierto.' },
   { id: 'coger', label: 'Coger / Tirar', iconName: 'Hand', defaultText: 'Intentas cogerlo o moverlo, pero no puedes llevártelo.' },
-  { id: 'hablar', label: 'Hablar con', iconName: 'MessageSquare', defaultText: 'Hablas en voz alta, pero nadie te responde.' },
+  { id: 'hablar', label: 'Hablar con', iconName: 'MessageSquare', defaultText: 'No parece que vaya a responderte.' },
   { id: 'empujar', label: 'Empujar / Atacar', iconName: 'Move', defaultText: 'Intentas empujarlo con fuerza, pero apenas se mueve.' },
   { id: 'ir_a', label: 'Ir a / Desplazarse', iconName: 'Footprints', defaultText: 'No puedes ir hacia allí en este momento.' },
 ];

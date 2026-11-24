@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { GameProject, Scene, Hotspot, SceneTextBlock, VerbType, QTEStep, SoundEffectType, SoundMode, SOUND_EFFECT_OPTIONS, DialogueBlock } from '../../types';
+import { GameProject, Scene, Hotspot, SceneTextBlock, VerbType, QTEStep, SoundEffectType, SoundMode, SOUND_EFFECT_OPTIONS, DialogueBlock, GameCharacter } from '../../types';
 import { ALL_VERBS, getProjectVerbs } from '../../utils/verbs';
 import { playSound, playBlockSound, isMusicSound, getSoundOptionsGrouped, stopAllAudio } from '../../utils/audio';
 import { isWordMatchInText, isWordChar } from '../../utils/textUtils';
@@ -240,6 +240,40 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
         [cleanKey]: false,
       },
     }));
+  };
+
+  const handleEnsureCharacter = (rawName: string, description?: string): GameCharacter => {
+    const clean = rawName.trim();
+    const formattedName = clean
+      ? clean.charAt(0).toUpperCase() + clean.slice(1)
+      : 'Nuevo Personaje';
+
+    const existing = (project.characters || []).find(
+      (c) => c.name.trim().toLowerCase() === formattedName.toLowerCase()
+    );
+    if (existing) return existing;
+
+    const newChar: GameCharacter = {
+      id: `char_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      name: formattedName,
+      description: description?.trim() || `Personaje vinculado a "${clean || formattedName}".`,
+      healthPoints: 100,
+    };
+
+    updateProject((prev) => {
+      const alreadyExists = (prev.characters || []).some(
+        (c) =>
+          c.id === newChar.id ||
+          c.name.trim().toLowerCase() === formattedName.toLowerCase()
+      );
+      if (alreadyExists) return prev;
+      return {
+        ...prev,
+        characters: [...(prev.characters || []), newChar],
+      };
+    });
+
+    return newChar;
   };
 
   // Image section visibility & textarea refs for text formatting toolbar
@@ -3243,9 +3277,13 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
                             <button
                               type="button"
                               onClick={() => {
+                                const ensuredChar =
+                                  (project.characters || [])[0] ||
+                                  handleEnsureCharacter('Personaje');
                                 const initialDialogue: DialogueBlock = {
-                                  characterId: project.characters[0]?.id || 'char_npc',
+                                  characterId: ensuredChar.id,
                                   greeting: 'Hola, ¿en qué puedo ayudarte?',
+                                  insertConversationInStory: false,
                                   nodes: [
                                     {
                                       id: 'node_root',
@@ -3757,6 +3795,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
           onSave={handleSaveHotspot}
           onClose={() => setActiveHotspotForEdit(null)}
           onAddGlobalFlag={handleAddGlobalFlag}
+          onEnsureCharacter={handleEnsureCharacter}
         />
       )}
 
@@ -3782,6 +3821,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
               <DialogueEditor
                 project={project}
                 dialogue={editingDialogueContext.dialogue}
+                onEnsureCharacter={handleEnsureCharacter}
                 onChange={(updatedDialogue) => {
                   if (editingDialogueContext.type === 'block') {
                     handleUpdateBlockDialogue(editingDialogueContext.blockId, updatedDialogue);

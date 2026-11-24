@@ -264,7 +264,7 @@ export default function App() {
         usar: 'Intentas usarlo, pero no parece tener ningún efecto evidente.',
         abrir: 'Intentas abrirlo, pero no es posible o no responde.',
         coger: 'Intentas cogerlo, pero no puedes llevártelo contigo.',
-        hablar: 'Hablas en voz alta, pero nadie te responde.',
+        hablar: 'No parece que vaya a responderte.',
         empujar: 'Lo empujas con fuerza, pero apenas se mueve.',
         ir_a: 'No puedes ir hacia allí en este momento.',
       },

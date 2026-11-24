@@ -6,6 +6,7 @@ import {
   DialogueOption,
   SoundEffectType,
   SOUND_EFFECT_OPTIONS,
+  GameCharacter,
 } from '../../types';
 import { getAllMergedSounds } from '../../utils/audio';
 import { AutoGrowTextarea } from '../common/AutoGrowTextarea';
@@ -29,6 +30,8 @@ interface DialogueEditorProps {
   dialogue?: DialogueBlock;
   onChange: (updated: DialogueBlock | undefined) => void;
   webAspect?: 'clean' | 'classic';
+  suggestedCharacterName?: string;
+  onEnsureCharacter?: (name: string, description?: string) => GameCharacter;
 }
 
 export const DialogueEditor: React.FC<DialogueEditorProps> = ({
@@ -36,8 +39,11 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
   dialogue,
   onChange,
   webAspect = 'clean',
+  suggestedCharacterName,
+  onEnsureCharacter,
 }) => {
   const characters = project.characters || [];
+  const [newInlineCharName, setNewInlineCharName] = useState('');
   const inventoryItems = project.inventoryItems || [];
   const scenes = project.scenes || [];
 
@@ -66,12 +72,17 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
 
         <button
           onClick={() => {
-            const defaultCharId = characters.length > 0 ? characters[0].id : '';
+            let defaultCharId = characters.length > 0 ? characters[0].id : '';
+            if (!defaultCharId && onEnsureCharacter) {
+              const ensured = onEnsureCharacter(suggestedCharacterName || 'Personaje');
+              defaultCharId = ensured.id;
+            }
             const initialNodeId = `node_${Date.now()}`;
             onChange({
               characterId: defaultCharId,
               initialNodeId,
               greeting: '¿Qué deseas?',
+              insertConversationInStory: false,
               nodes: [
                 {
                   id: initialNodeId,
@@ -254,7 +265,38 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
               </option>
             ))}
           </select>
-          {characters.length === 0 && (
+          {onEnsureCharacter && (
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <input
+                type="text"
+                value={newInlineCharName}
+                onChange={(e) => setNewInlineCharName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newInlineCharName.trim()) {
+                    e.preventDefault();
+                    const created = onEnsureCharacter(newInlineCharName.trim());
+                    onChange({ ...dialogue, characterId: created.id });
+                    setNewInlineCharName('');
+                  }
+                }}
+                placeholder={suggestedCharacterName ? `Ej: ${suggestedCharacterName}` : 'Nuevo personaje...'}
+                className="flex-1 min-w-0 px-2 py-1 rounded-md text-[11px] border border-slate-700 bg-slate-950 text-slate-200 focus:outline-none focus:border-amber-500"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const targetName = newInlineCharName.trim() || suggestedCharacterName || 'Nuevo Personaje';
+                  const created = onEnsureCharacter(targetName);
+                  onChange({ ...dialogue, characterId: created.id });
+                  setNewInlineCharName('');
+                }}
+                className="px-2 py-1 rounded-md bg-emerald-600/80 hover:bg-emerald-500 text-white text-[11px] font-bold whitespace-nowrap cursor-pointer"
+              >
+                + Crear Personaje
+              </button>
+            </div>
+          )}
+          {characters.length === 0 && !onEnsureCharacter && (
             <p className="text-[10px] text-amber-400 mt-1">
               No hay personajes creados. Ve a la pestaña 'Personajes' para añadir uno.
             </p>
@@ -278,6 +320,24 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
           </select>
         </div>
       </div>
+
+      {/* Optional: Insert conversation transcript into scene narrative */}
+      <label className="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-800 bg-slate-950/70 cursor-pointer hover:border-amber-500/40 transition-colors">
+        <input
+          type="checkbox"
+          checked={!!dialogue.insertConversationInStory}
+          onChange={(e) => onChange({ ...dialogue, insertConversationInStory: e.target.checked })}
+          className="mt-0.5 rounded text-amber-500 focus:ring-amber-500 cursor-pointer"
+        />
+        <div>
+          <span className="block text-[11px] font-semibold text-slate-200">
+            Insertar la conversación en el texto de la escena (Opcional)
+          </span>
+          <span className="block text-[10px] text-slate-400">
+            Desactivado por defecto: la charla transcurre en la ventana de diálogo sin añadir réplicas sueltas a la narración. Actívalo solo si quieres transcribir el diálogo al texto de la escena.
+          </span>
+        </div>
+      </label>
 
       {/* Nodes Bar */}
       <div className="space-y-2 pt-1">
