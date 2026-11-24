@@ -441,6 +441,14 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
   const skipNextTopResetRef = useRef<boolean>(false);
   const pendingScrollModeRef = useRef<'reveal' | 'qte-origin'>('reveal');
   const qteRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const qteRevealCleanupRef = useRef<(() => void) | null>(null);
+  const pendingQteRevealKeysRef = useRef<string[] | null>(null);
+  const sceneVisitSnapshotsRef = useRef<Map<string, {
+    visibleKeys: Set<string>;
+    scrollTop: number;
+    windowScrollY: number;
+    lastDomId: string | null;
+  }>>(new Map());
   const qteReturnAnchorRef = useRef<{
     originSceneId: string;
     qteSceneId: string;
@@ -450,6 +458,43 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     originWindowScrollY: number;
   } | null>(null);
   const pendingFallbackScrollRef = useRef<{ top: number; windowY: number } | null>(null);
+
+  const isSceneIdQTE = (sId?: string | null) => {
+    if (!sId) return false;
+    const sc = project.scenes.find((s) => s.id === sId);
+    return !!(sc && (sc.type === 'qte' || sc.qteConfig) && sc.qteConfig?.sequence && sc.qteConfig.sequence.length > 0);
+  };
+
+  const resolveQteReturnAnchor = (
+    projId: string | null,
+    fromSceneId: string | null,
+    toSceneId: string | null,
+    histLen: number,
+    snapHistLen: number,
+    snapProjId: string | null
+  ) => {
+    if (snapProjId !== projId || !fromSceneId || !toSceneId || (histLen === 0 && snapHistLen > 0)) {
+      return null;
+    }
+    const anchor = qteReturnAnchorRef.current;
+    if (anchor && fromSceneId === anchor.qteSceneId && toSceneId === anchor.originSceneId) {
+      return anchor;
+    }
+    if (isSceneIdQTE(fromSceneId) && !isSceneIdQTE(toSceneId)) {
+      const prevVisit = sceneVisitSnapshotsRef.current.get(toSceneId);
+      if (prevVisit) {
+        return {
+          originSceneId: toSceneId,
+          qteSceneId: fromSceneId,
+          originDomId: prevVisit.lastDomId,
+          originVisibleKeys: new Set(prevVisit.visibleKeys),
+          originScrollTop: prevVisit.scrollTop,
+          originWindowScrollY: prevVisit.windowScrollY,
+        };
+      }
+    }
+    return null;
+  };
 
   useEffect(() => {
     setActiveVerb(null);
@@ -486,14 +531,16 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
   const captureQteReturnAnchor = (targetSceneId?: string, explicitBlockId?: string | null) => {
     if (!targetSceneId || targetSceneId === gameState.currentSceneId) return;
-    const targetScene = project.scenes.find((s) => s.id === targetSceneId);
-    const isTargetQTE = !!(
-      targetScene &&
-      (targetScene.type === 'qte' || targetScene.qteConfig) &&
-      targetScene.qteConfig?.sequence &&
-      targetScene.qteConfig.sequence.length > 0
-    );
-    if (!isTargetQTE || !targetScene) return;
+    if (!isSceneIdQTE(targetSceneId)) return;
+
+    const existing = qteReturnAnchorRef.current;
+    if (existing && existing.qteSceneId === gameState.currentSceneId && isSceneIdQTE(gameState.currentSceneId)) {
+      qteReturnAnchorRef.current = {
+        ...existing,
+        qteSceneId: targetSceneId,
+      };
+      return;
+    }
 
     const originDomId =
       lastClickedContainerIdRef.current ||
@@ -501,7 +548,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
     qteReturnAnchorRef.current = {
       originSceneId: gameState.currentSceneId,
-      qteSceneId: targetScene.id,
+      qteSceneId: targetSceneId,
       originDomId,
       originVisibleKeys: new Set(prevRevealSnapshotRef.current.keys),
       originScrollTop: narrativeRef.current?.scrollTop || 0,
@@ -648,6 +695,10 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         clearTimeout(qteRevealTimerRef.current);
         qteRevealTimerRef.current = null;
       }
+      if (qteRevealCleanupRef.current) {
+        qteRevealCleanupRef.current();
+        qteRevealCleanupRef.current = null;
+      }
     };
   }, []);
 
@@ -656,8 +707,8 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
   useEffect(() => {
     setQteMistakeMsg(null);
+    const isNewScene = lastAudioSceneIdRef.current !== gameState.currentSceneId;
     if (currentScene) {
-      const isNewScene = lastAudioSceneIdRef.current !== gameState.currentSceneId;
       if (isNewScene) {
         lastAudioSceneIdRef.current = gameState.currentSceneId;
         playedBlockSoundIdsRef.current.clear();
@@ -703,13 +754,15 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         });
       }
     }
-    if (currentScene && (currentScene.type === 'qte' || currentScene.qteConfig) && currentScene.qteConfig?.sequence?.length) {
-      const timeLimit = currentScene.qteConfig.timeLimitSeconds || 10;
-      setQteTimeLeft(timeLimit);
-      setQteStepIndex(0);
-      setQteStatus('active');
-    } else {
-      setQteStatus('idle');
+    if (isNewScene) {
+      if (currentScene && (currentScene.type === 'qte' || currentScene.qteConfig) && currentScene.qteConfig?.sequence?.length) {
+        const timeLimit = currentScene.qteConfig.timeLimitSeconds || 10;
+        setQteTimeLeft(timeLimit);
+        setQteStepIndex(0);
+        setQteStatus('active');
+      } else {
+        setQteStatus('idle');
+      }
     }
   }, [gameState.currentSceneId, currentScene?.id, gameState.flags, gameState.inventory, project.customSounds]);
 
@@ -793,43 +846,50 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
       }
     });
 
-    const currentRevealItems: { key: string; domId: string }[] = [];
+    const currentRevealItems: { key: string; domId: string; hasContent: boolean }[] = [];
     if (currentScene) {
       (currentScene.textBlocks || []).forEach((b) => {
-        if (b.visibleIfFlags && Object.entries(b.visibleIfFlags).some(([k, v]) => !!gameState.flags[k] !== v)) return;
-        if (b.hiddenIfFlags && Object.entries(b.hiddenIfFlags).some(([k, v]) => !!gameState.flags[k] === v)) return;
+        if (!checkConditions(b.visibleIfFlags, b.hiddenIfFlags)) return;
         const reqItems = b.requiredItemIds || (b.requiredItemId ? [b.requiredItemId] : []);
         if (reqItems.length > 0 && !reqItems.every((id) => gameState.inventory.includes(id))) return;
 
-        currentRevealItems.push({ key: `block:${b.id}`, domId: `block-${b.id}` });
+        const hasBlockContent = !!(b.text?.trim() || b.imageFileData || b.imageUrl);
+        currentRevealItems.push({ key: `block:${b.id}`, domId: `block-${b.id}`, hasContent: hasBlockContent });
         const attached = blockAppendedMap[b.id] || [];
-        attached.forEach((_, i) => {
+        attached.forEach((txt, i) => {
           currentRevealItems.push({
             key: `app:${b.id}:${i}`,
             domId: `block-appended-${b.id}-${i}`,
+            hasContent: !!txt?.trim(),
           });
         });
       });
 
-      unattachedAppended.forEach((_, i) => {
+      unattachedAppended.forEach((txt, i) => {
         currentRevealItems.push({
           key: `app:unattached:${i}`,
           domId: `unattached-appended-${i}`,
+          hasContent: !!txt?.trim(),
         });
       });
     }
 
     const currentKeySet = new Set(currentRevealItems.map((it) => it.key));
 
+    if (snap.projectId !== projId || (histLen === 0 && snap.historyLen > 0)) {
+      sceneVisitSnapshotsRef.current.clear();
+    } else if (!isSameScene && snap.sceneId && !isSceneIdQTE(snap.sceneId)) {
+      const existingVisit = sceneVisitSnapshotsRef.current.get(snap.sceneId);
+      sceneVisitSnapshotsRef.current.set(snap.sceneId, {
+        visibleKeys: new Set(snap.keys),
+        scrollTop: narrativeRef.current?.scrollTop || existingVisit?.scrollTop || 0,
+        windowScrollY: window.scrollY || existingVisit?.windowScrollY || 0,
+        lastDomId: lastClickedContainerIdRef.current || existingVisit?.lastDomId || null,
+      });
+    }
+
     if (!isSameScene) {
-      const anchor = qteReturnAnchorRef.current;
-      const isReturningFromQte = !!(
-        anchor &&
-        snap.projectId === projId &&
-        snap.sceneId === anchor.qteSceneId &&
-        sceneId === anchor.originSceneId &&
-        !(histLen === 0 && snap.historyLen > 0)
-      );
+      const anchor = resolveQteReturnAnchor(projId, snap.sceneId, sceneId, histLen, snap.historyLen, snap.projectId);
 
       prevRevealSnapshotRef.current = {
         projectId: projId,
@@ -838,12 +898,16 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         keys: currentKeySet,
       };
 
-      if (isReturningFromQte && anchor) {
+      if (anchor) {
         qteReturnAnchorRef.current = null;
         skipNextTopResetRef.current = true;
         if (qteRevealTimerRef.current) {
           clearTimeout(qteRevealTimerRef.current);
           qteRevealTimerRef.current = null;
+        }
+        if (qteRevealCleanupRef.current) {
+          qteRevealCleanupRef.current();
+          qteRevealCleanupRef.current = null;
         }
 
         // Restore prior scroll position synchronously before paint so the view never jumps to top: 0
@@ -859,17 +923,15 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
         if (newlyAddedAfterQte.length > 0) {
           const newKeys = newlyAddedAfterQte.map((it) => it.key);
+          const firstTarget = newlyAddedAfterQte.find((it) => it.hasContent) || newlyAddedAfterQte[0];
           setDeferredRevealKeys(new Set(newKeys));
           pendingScrollModeRef.current = 'reveal';
           if (!hasBlockingModal) {
-            setPendingScrollDomId(newlyAddedAfterQte[0].domId);
-            qteRevealTimerRef.current = setTimeout(() => {
-              setDeferredRevealKeys(new Set());
-              setHighlightedRevealKeys(new Set(newKeys));
-              qteRevealTimerRef.current = null;
-            }, 170);
+            pendingQteRevealKeysRef.current = newKeys;
+            setPendingScrollDomId(firstTarget.domId);
           }
         } else {
+          pendingQteRevealKeysRef.current = null;
           if (deferredRevealKeys.size > 0) setDeferredRevealKeys(new Set());
           pendingScrollModeRef.current = 'qte-origin';
           const matchedOriginItem = anchor.originDomId
@@ -906,6 +968,11 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
         clearTimeout(qteRevealTimerRef.current);
         qteRevealTimerRef.current = null;
       }
+      if (qteRevealCleanupRef.current) {
+        qteRevealCleanupRef.current();
+        qteRevealCleanupRef.current = null;
+      }
+      pendingQteRevealKeysRef.current = null;
       skipNextTopResetRef.current = false;
       if (deferredRevealKeys.size > 0) setDeferredRevealKeys(new Set());
       if (highlightedRevealKeys.size > 0) setHighlightedRevealKeys(new Set());
@@ -938,15 +1005,24 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     newlyAdded.forEach((it) => readyKeys.add(it.key));
 
     if (readyKeys.size > 0) {
+      const readyList = Array.from(readyKeys);
+      const firstReady =
+        currentRevealItems.find((it) => readyKeys.has(it.key) && it.hasContent) ||
+        currentRevealItems.find((it) => readyKeys.has(it.key));
+
+      if (deferredRevealKeys.size > 0 && pendingQteRevealKeysRef.current) {
+        // Already deferred for QTE return scroll; keep waiting until scroll settles
+        return;
+      }
+
       if (deferredRevealKeys.size > 0) {
         setDeferredRevealKeys(new Set());
       }
       setHighlightedRevealKeys((prev) => {
         const next = new Set(prev);
-        readyKeys.forEach((k) => next.add(k));
+        readyList.forEach((k) => next.add(k));
         return next;
       });
-      const firstReady = currentRevealItems.find((it) => readyKeys.has(it.key));
       if (firstReady) {
         pendingScrollModeRef.current = 'reveal';
         setPendingScrollDomId(firstReady.domId);
@@ -977,14 +1053,171 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     if (!pendingScrollDomId) return;
     let raf1 = 0;
     let raf2 = 0;
+    const targetDomId = pendingScrollDomId;
     const mode = pendingScrollModeRef.current;
+    const qteKeys = pendingQteRevealKeysRef.current;
+    pendingQteRevealKeysRef.current = null;
+
     raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
-        const el = document.getElementById(pendingScrollDomId);
-        if (el) {
-          scrollToRevealedElement(el, mode);
-        }
+        const el = document.getElementById(targetDomId);
         setPendingScrollDomId(null);
+
+        if (!el) {
+          if (qteKeys && qteKeys.length > 0) {
+            setDeferredRevealKeys(new Set());
+            setHighlightedRevealKeys(new Set(qteKeys));
+          }
+          return;
+        }
+
+        scrollToRevealedElement(el, mode);
+
+        // Re-center if remounted images shift layout while scrolling, and synchronize QTE reveal animation with viewport arrival
+        if (qteRevealCleanupRef.current) {
+          qteRevealCleanupRef.current();
+          qteRevealCleanupRef.current = null;
+        }
+
+        const container = narrativeRef.current;
+        const isContainerScrollable =
+          container &&
+          container.scrollHeight > container.clientHeight + 4 &&
+          ['auto', 'scroll'].includes(window.getComputedStyle(container).overflowY);
+
+        let revealed = false;
+        let inView = false;
+        let minTimePassed = false;
+        let settleDelayTimer: ReturnType<typeof setTimeout> | null = null;
+        let minTimer: ReturnType<typeof setTimeout> | null = null;
+        let maxTimer: ReturnType<typeof setTimeout> | null = null;
+        let layoutWatchTimer: ReturnType<typeof setTimeout> | null = null;
+        let io: IntersectionObserver | null = null;
+        let ro: ResizeObserver | null = null;
+        const imgListeners: { img: HTMLImageElement; fn: () => void }[] = [];
+
+        const stopLayoutWatch = () => {
+          if (ro) {
+            ro.disconnect();
+            ro = null;
+          }
+          imgListeners.forEach(({ img, fn }) => img.removeEventListener('load', fn));
+          imgListeners.length = 0;
+          if (layoutWatchTimer) {
+            clearTimeout(layoutWatchTimer);
+            layoutWatchTimer = null;
+          }
+        };
+
+        const cleanupAll = () => {
+          stopLayoutWatch();
+          if (io) {
+            io.disconnect();
+            io = null;
+          }
+          if (settleDelayTimer) {
+            clearTimeout(settleDelayTimer);
+            settleDelayTimer = null;
+          }
+          if (minTimer) {
+            clearTimeout(minTimer);
+            minTimer = null;
+          }
+          if (maxTimer) {
+            clearTimeout(maxTimer);
+            maxTimer = null;
+          }
+          if (qteRevealCleanupRef.current === cleanupAll) {
+            qteRevealCleanupRef.current = null;
+          }
+        };
+
+        const flushReveal = () => {
+          if (revealed) return;
+          revealed = true;
+          if (io) {
+            io.disconnect();
+            io = null;
+          }
+          if (settleDelayTimer) {
+            clearTimeout(settleDelayTimer);
+            settleDelayTimer = null;
+          }
+          if (minTimer) {
+            clearTimeout(minTimer);
+            minTimer = null;
+          }
+          if (maxTimer) {
+            clearTimeout(maxTimer);
+            maxTimer = null;
+          }
+          if (qteKeys && qteKeys.length > 0) {
+            setDeferredRevealKeys(new Set());
+            setHighlightedRevealKeys(new Set(qteKeys));
+          }
+        };
+
+        const maybeFlush = () => {
+          if (revealed || !inView || !minTimePassed) return;
+          if (settleDelayTimer) return;
+          settleDelayTimer = setTimeout(flushReveal, 60);
+        };
+
+        if (container) {
+          let initialHeight = container.scrollHeight;
+          const handleShift = () => {
+            if (!document.body.contains(el)) return;
+            scrollToRevealedElement(el, mode);
+          };
+          if (typeof ResizeObserver !== 'undefined') {
+            ro = new ResizeObserver(() => {
+              if (Math.abs(container.scrollHeight - initialHeight) > 8) {
+                initialHeight = container.scrollHeight;
+                handleShift();
+              }
+            });
+            ro.observe(container);
+          }
+          const imgs = container.querySelectorAll('img');
+          imgs.forEach((img) => {
+            if (!img.complete) {
+              const onLoad = () => handleShift();
+              img.addEventListener('load', onLoad, { once: true });
+              imgListeners.push({ img, fn: onLoad });
+            }
+          });
+          layoutWatchTimer = setTimeout(stopLayoutWatch, 750);
+        }
+
+        if (qteKeys && qteKeys.length > 0) {
+          if (typeof IntersectionObserver !== 'undefined') {
+            io = new IntersectionObserver(
+              (entries) => {
+                if (entries.some((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.08)) {
+                  inView = true;
+                  maybeFlush();
+                }
+              },
+              {
+                root: isContainerScrollable ? container : null,
+                threshold: [0.08, 0.25],
+              }
+            );
+            io.observe(el);
+          } else {
+            inView = true;
+          }
+          minTimer = setTimeout(() => {
+            minTimePassed = true;
+            maybeFlush();
+          }, 160);
+          maxTimer = setTimeout(flushReveal, 650);
+        }
+
+        qteRevealCleanupRef.current = () => {
+          revealed = true;
+          cleanupAll();
+        };
       });
     });
     return () => {
@@ -1218,7 +1451,11 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
   const handleRetryBeforeDeath = () => {
     playSound('select');
-    qteReturnAnchorRef.current = null;
+    if (qteRevealCleanupRef.current) {
+      qteRevealCleanupRef.current();
+      qteRevealCleanupRef.current = null;
+    }
+    pendingQteRevealKeysRef.current = null;
     lastClickedContainerIdRef.current = null;
     setActiveVerb(null);
     setSelectedInventoryItemId(null);
@@ -1232,6 +1469,9 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
     if (checkpoint) {
       const restored = cloneGameState(checkpoint);
       restored.isGameOver = false;
+      if (qteReturnAnchorRef.current?.qteSceneId !== restored.currentSceneId) {
+        qteReturnAnchorRef.current = null;
+      }
       const sameScene = restored.currentSceneId === gameState.currentSceneId;
       setGameState(restored);
 
@@ -1245,6 +1485,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
       setTimeout(() => setRetryToast(null), 2600);
       return;
     }
+    qteReturnAnchorRef.current = null;
 
     if (!isSceneTesting) {
       try {
@@ -3130,7 +3371,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
 
         {/* Main Narrative Card (~60% height in focus mode) */}
         {/* En móvil no se usa scroll anidado: la tarjeta crece y scrollea la página */}
-        <div ref={narrativeRef} className={`p-5 sm:p-7 rounded-2xl border ${themeConfig.cardBorderClass} ${themeConfig.cardBgClass} shadow-xl relative overflow-hidden transition-all ${
+        <div ref={narrativeRef} className={`p-5 sm:p-7 rounded-2xl border ${themeConfig.cardBorderClass} ${themeConfig.cardBgClass} shadow-xl relative overflow-hidden transition-colors ${
           isHeaderCollapsed
             ? (isQTEScene && qteStatus === 'active'
                 ? 'md:max-h-[44dvh] md:min-h-[200px] md:overflow-y-auto'
@@ -3171,14 +3412,17 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                 snap.sceneId === (currentScene?.id || null) &&
                 !((gameState.history?.length || 0) === 0 && snap.historyLen > 0);
 
-              const returningAnchor = qteReturnAnchorRef.current;
-              const isQteReturningNow = !!(
-                returningAnchor &&
-                snap.projectId === (project?.id || null) &&
-                snap.sceneId === returningAnchor.qteSceneId &&
-                currentScene?.id === returningAnchor.originSceneId &&
-                !((gameState.history?.length || 0) === 0 && snap.historyLen > 0)
-              );
+              const returningAnchor = !isSameSceneContext
+                ? resolveQteReturnAnchor(
+                    project?.id || null,
+                    snap.sceneId,
+                    currentScene?.id || null,
+                    gameState.history?.length || 0,
+                    snap.historyLen,
+                    snap.projectId
+                  )
+                : null;
+              const isQteReturningNow = !!returningAnchor;
 
               const getRevealState = (revealKey: string) => {
                 const justAppearedNow = isSameSceneContext && !snap.keys.has(revealKey);
