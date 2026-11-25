@@ -1928,18 +1928,18 @@ export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
       {/* Modal Overlay for Dialogue Tree Editor */}
       {isDialogueModalOpen && (
         <div
-          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 cursor-default animate-fade-in"
+          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 cursor-default animate-fade-in"
           onClick={(e) => e.stopPropagation()}
         >
           <div
-            className="bg-slate-950 border-2 border-amber-500/60 rounded-2xl w-full max-w-4xl p-5 shadow-2xl space-y-4 max-h-[90vh] flex flex-col"
+            className="bg-slate-950 border-2 border-amber-500/60 rounded-2xl w-[96vw] max-w-[1680px] h-[92vh] p-3 sm:p-4 shadow-2xl gap-3 flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-amber-500/30 pb-3 shrink-0">
+            <div className="flex items-center justify-between border-b border-amber-500/30 pb-2.5 shrink-0">
               <div className="flex items-center gap-2">
                 <MessageSquare className="w-5 h-5 text-amber-400" />
                 <h3 className="font-bold text-base text-amber-300">
-                  Editor de Diálogo y Árbol de Opciones
+                  Editor Visual de Diálogo y Árbol de Conversación
                 </h3>
               </div>
               <button
@@ -1951,7 +1951,7 @@ export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 p-1">
+            <div className="flex-1 min-h-0 flex flex-col">
               <DialogueEditor
                 project={project}
                 dialogue={dialogue}
@@ -1967,7 +1967,7 @@ export const HotspotEditorModal: React.FC<HotspotEditorModalProps> = ({
               />
             </div>
 
-            <div className="border-t border-slate-800 pt-3 flex justify-end shrink-0">
+            <div className="border-t border-slate-800 pt-2.5 flex justify-end shrink-0">
               <button
                 type="button"
                 onClick={() => setIsDialogueModalOpen(false)}

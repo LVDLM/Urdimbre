@@ -3801,12 +3801,12 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
 
       {/* Dialogue Editor Modal Overlay */}
       {editingDialogueContext && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <div className="w-full max-w-4xl bg-slate-950 border border-amber-500/40 rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3 shrink-0">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
+          <div className="w-[96vw] max-w-[1680px] h-[92vh] bg-slate-950 border border-amber-500/40 rounded-2xl p-3 sm:p-4 shadow-2xl gap-3 flex flex-col">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2.5 shrink-0">
               <h3 className="text-base font-bold text-amber-300 flex items-center gap-2">
                 <MessageSquare className="w-5 h-5 text-amber-400" />
-                <span>Editor de Árbol de Diálogo de la Escena</span>
+                <span>Editor Visual de Árbol de Diálogo de la Escena</span>
               </h3>
               <button
                 type="button"
@@ -3817,7 +3817,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-1">
+            <div className="flex-1 min-h-0 flex flex-col">
               <DialogueEditor
                 project={project}
                 dialogue={editingDialogueContext.dialogue}
@@ -3843,7 +3843,7 @@ export const SceneEditor: React.FC<SceneEditorProps> = ({ project, updateProject
               />
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-white/10 shrink-0">
+            <div className="flex justify-end pt-2.5 border-t border-white/10 shrink-0">
               <button
                 type="button"
                 onClick={() => setEditingDialogueContext(null)}

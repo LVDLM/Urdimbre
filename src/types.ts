@@ -242,7 +242,13 @@ export interface DialogueOption {
 export interface DialogueNode {
   id: string;
   title: string; // E.g. "Nodo 1: Saludo inicial", "Nodo 2: Insultos", "Nodo 3: Entrega de objeto"
+  nodeType?: 'dialogue' | 'npc_only'; // 'dialogue' (default) or 'npc_only' (pure NPC statement that continues/returns on click)
+  speakerCharacterId?: string; // Optional speaker override (for multi-character dialogues)
   npcPrompt?: string; // What the NPC says at this node (e.g. "¡Luchas como un granjero!")
+  exhaustedMessage?: string; // Optional fallback message if all options were exhausted/hidden
+  autoNextNodeId?: string; // Target node ID for 'npc_only' nodes (forward or return)
+  autoEndConversation?: boolean; // Closes conversation after an 'npc_only' node
+  position?: { x: number; y: number }; // Optional saved coordinates on visual node canvas
   options: DialogueOption[];
 }
 

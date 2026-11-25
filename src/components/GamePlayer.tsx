@@ -4314,24 +4314,36 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
             ];
 
         const currentNode = nodes.find((n) => n.id === currentNodeId) || nodes[0];
-        const npcPrompt = currentNpcReply || currentNode?.npcPrompt || dialogueBlock.greeting || 'Te observa en silencio...';
+        const activeSpeaker =
+          (currentNode?.speakerCharacterId
+            ? project.characters?.find((c) => c.id === currentNode.speakerCharacterId)
+            : null) || character;
+        const isNpcOnlyNode = currentNode?.nodeType === 'npc_only';
 
         // Filter available player options based on flags and one-time used options
-        const availableOptions = (currentNode?.options || []).filter((opt) => {
-          if (opt.isOneTime && gameState.usedDialogueOptionIds?.includes(opt.id)) {
-            return false;
-          }
-          if (opt.requiredItemId && !gameState.inventory.includes(opt.requiredItemId)) {
-            return false;
-          }
-          if (opt.requiredFlags && !checkConditions(opt.requiredFlags)) {
-            return false;
-          }
-          if (!checkConditions(opt.visibleIfFlags, opt.hiddenIfFlags)) {
-            return false;
-          }
-          return true;
-        });
+        const availableOptions = isNpcOnlyNode
+          ? []
+          : (currentNode?.options || []).filter((opt) => {
+              if (opt.isOneTime && gameState.usedDialogueOptionIds?.includes(opt.id)) {
+                return false;
+              }
+              if (opt.requiredItemId && !gameState.inventory.includes(opt.requiredItemId)) {
+                return false;
+              }
+              if (opt.requiredFlags && !checkConditions(opt.requiredFlags)) {
+                return false;
+              }
+              if (!checkConditions(opt.visibleIfFlags, opt.hiddenIfFlags)) {
+                return false;
+              }
+              return true;
+            });
+
+        const baseNodePrompt =
+          !isNpcOnlyNode && availableOptions.length === 0 && currentNode?.exhaustedMessage?.trim()
+            ? currentNode.exhaustedMessage.trim()
+            : currentNode?.npcPrompt || dialogueBlock.greeting || 'Te observa en silencio...';
+        const npcPrompt = currentNpcReply || baseNodePrompt;
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
@@ -4340,18 +4352,18 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
               {/* Modal Header */}
               <div className={`px-5 py-3.5 border-b flex items-center justify-between gap-3 shrink-0 ${themeConfig.buttonBgClass} ${themeConfig.cardBorderClass}`}>
                 <div className="flex items-center gap-3">
-                  {character.imageFileData || character.imageUrl ? (
+                  {activeSpeaker.imageFileData || activeSpeaker.imageUrl ? (
                     <img
-                      src={character.imageFileData || character.imageUrl}
-                      alt={character.name}
+                      src={activeSpeaker.imageFileData || activeSpeaker.imageUrl}
+                      alt={activeSpeaker.name}
                       className={`w-10 h-10 object-cover rounded-lg border shadow shrink-0 ${themeConfig.cardBorderClass}`}
                     />
                   ) : (
                     <div className={`w-10 h-10 rounded-lg font-bold flex items-center justify-center shrink-0 text-base shadow border ${themeConfig.accentBgClass} ${themeConfig.accentClass} ${themeConfig.accentBorderClass}`}>
-                      {character.name.charAt(0).toUpperCase()}
+                      {activeSpeaker.name.charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <h3 className={`font-bold text-base ${themeConfig.accentClass}`}>{character.name}</h3>
+                  <h3 className={`font-bold text-base ${themeConfig.accentClass}`}>{activeSpeaker.name}</h3>
                 </div>
 
                 <button
@@ -4367,7 +4379,7 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
               <div className="p-5 overflow-y-auto space-y-4 flex-1">
                 {/* NPC Dialogue Prompt Box */}
                 <div className={`p-4 rounded-xl border text-base leading-relaxed shadow-inner whitespace-pre-line ${themeConfig.actionBoxBgClass} ${themeConfig.cardBorderClass} ${themeConfig.textMainClass}`}>
-                  <span className={`font-bold mr-2 ${themeConfig.accentClass}`}>{character.name}:</span>
+                  <span className={`font-bold mr-2 ${themeConfig.accentClass}`}>{activeSpeaker.name}:</span>
                   "{npcPrompt}"
                   {activeDialogue.lastTurnNotice && (
                     <div className={`mt-2.5 text-xs font-semibold ${themeConfig.accentClass}`}>
@@ -4376,13 +4388,47 @@ export const GamePlayer: React.FC<GamePlayerProps> = ({
                   )}
                 </div>
 
-                {/* Clickable Player Options List (Clean, without numbers or headers) */}
-                {availableOptions.length > 0 ? (
+                {/* Clickable Player Options List or NPC-only Continue */}
+                {isNpcOnlyNode ? (
+                  <div className="pt-1 flex justify-end">
+                    <button
+                      onClick={() => {
+                        playSound('select');
+                        const targetNextId =
+                          !currentNode.autoEndConversation &&
+                          currentNode.autoNextNodeId &&
+                          currentNode.autoNextNodeId !== 'end' &&
+                          nodes.some((n) => n.id === currentNode.autoNextNodeId)
+                            ? currentNode.autoNextNodeId
+                            : null;
+                        if (targetNextId) {
+                          setActiveDialogue((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  currentNodeId: targetNextId,
+                                  currentNpcReply: undefined,
+                                  lastTurnNotice: undefined,
+                                }
+                              : null
+                          );
+                        } else {
+                          closeActiveDialogue(activeDialogue.receivedItemIds);
+                        }
+                      }}
+                      className={`px-5 py-2.5 rounded-xl border text-sm font-bold transition-all cursor-pointer shadow-sm ${themeConfig.buttonBgClass} ${themeConfig.buttonBorderClass} ${themeConfig.buttonTextClass} ${themeConfig.buttonHoverClass}`}
+                    >
+                      {!currentNode.autoEndConversation && currentNode.autoNextNodeId && currentNode.autoNextNodeId !== 'end'
+                        ? 'Continuar →'
+                        : 'Finalizar conversación'}
+                    </button>
+                  </div>
+                ) : availableOptions.length > 0 ? (
                   <div className="space-y-2 pt-1">
                     {availableOptions.map((opt) => (
                       <button
                         key={opt.id}
-                        onClick={() => handleSelectDialogueOption(opt, character, blockId)}
+                        onClick={() => handleSelectDialogueOption(opt, activeSpeaker, blockId)}
                         className={`w-full text-left p-3.5 rounded-xl border text-sm font-medium transition-all group cursor-pointer shadow-sm ${themeConfig.buttonBgClass} ${themeConfig.buttonBorderClass} ${themeConfig.buttonTextClass} ${themeConfig.buttonHoverClass}`}
                       >
                         <span className="group-hover:translate-x-1 transition-transform inline-block leading-snug">
