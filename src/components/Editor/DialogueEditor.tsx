@@ -31,6 +31,7 @@ import {
   Copy,
   UserPlus,
   Map as MapIcon,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface DialogueEditorProps {
@@ -865,6 +866,106 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
 
     return list;
   }, [nodes, effectivePositions, portYOffsets, selectedNodeId, selectedOptionId]);
+
+  // Detect trapped loops (cycles / paths that cannot reach any conversation exit)
+  const { trappedLoopNodeIds, trappedLoopWireKeys } = useMemo(() => {
+    const nodeIds = new Set(nodes.map((n) => n.id));
+    const canExit = new Set<string>();
+    const reverseAdj = new Map<string, string[]>();
+    const forwardAdj = new Map<string, string[]>();
+
+    nodes.forEach((n) => {
+      reverseAdj.set(n.id, []);
+      forwardAdj.set(n.id, []);
+    });
+
+    nodes.forEach((n) => {
+      if (n.nodeType === 'npc_only') {
+        if (
+          n.autoEndConversation ||
+          !n.autoNextNodeId ||
+          n.autoNextNodeId === 'end' ||
+          !nodeIds.has(n.autoNextNodeId)
+        ) {
+          canExit.add(n.id);
+        } else {
+          forwardAdj.get(n.id)!.push(n.autoNextNodeId);
+          reverseAdj.get(n.autoNextNodeId)!.push(n.id);
+        }
+      } else {
+        let hasDirectExit = false;
+        (n.options || []).forEach((opt) => {
+          if (
+            opt.endConversation ||
+            opt.nextNodeId === 'end' ||
+            opt.goToSceneId ||
+            opt.isGameOver
+          ) {
+            hasDirectExit = true;
+          } else if (opt.nextNodeId && nodeIds.has(opt.nextNodeId)) {
+            forwardAdj.get(n.id)!.push(opt.nextNodeId);
+            reverseAdj.get(opt.nextNodeId)!.push(n.id);
+          }
+        });
+        if (hasDirectExit) {
+          canExit.add(n.id);
+        }
+      }
+    });
+
+    // Propagate exitability backwards along edges
+    const queue = Array.from(canExit);
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      for (const prev of reverseAdj.get(cur) || []) {
+        if (!canExit.has(prev)) {
+          canExit.add(prev);
+          queue.push(prev);
+        }
+      }
+    }
+
+    // Exact cycle check among nodes that cannot reach any exit
+    const bfsReaches = (startId: string, targets: Set<string>): boolean => {
+      const visited = new Set<string>();
+      const q = [...(forwardAdj.get(startId) || [])].filter((id) => !canExit.has(id));
+      while (q.length > 0) {
+        const cur = q.shift()!;
+        if (targets.has(cur)) return true;
+        if (visited.has(cur)) continue;
+        visited.add(cur);
+        for (const nxt of forwardAdj.get(cur) || []) {
+          if (!canExit.has(nxt) && !visited.has(nxt)) {
+            q.push(nxt);
+          }
+        }
+      }
+      return false;
+    };
+
+    const cycleNodes = new Set<string>();
+    nodes.forEach((n) => {
+      if (!canExit.has(n.id) && bfsReaches(n.id, new Set([n.id]))) {
+        cycleNodes.add(n.id);
+      }
+    });
+
+    const trapped = new Set<string>(cycleNodes);
+    nodes.forEach((n) => {
+      if (!canExit.has(n.id) && !trapped.has(n.id) && bfsReaches(n.id, cycleNodes)) {
+        trapped.add(n.id);
+      }
+    });
+
+    const wireKeys = new Set<string>();
+    wireEdges.forEach((edge) => {
+      if (trapped.has(edge.targetNodeId)) {
+        wireKeys.add(edge.key);
+      }
+    });
+
+    return { trappedLoopNodeIds: trapped, trappedLoopWireKeys: wireKeys };
+  }, [nodes, wireEdges]);
 
   const computeBezierPath = (sx: number, sy: number, tx: number, ty: number, isReturn: boolean, returnIndex = 0) => {
     if (isReturn) {
@@ -2006,6 +2107,17 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
                 >
                   <path d="M 0 1.5 L 8.5 5 L 0 8.5 z" fill="#10b981" />
                 </marker>
+                <marker
+                  id="arrow-loop"
+                  viewBox="0 0 10 10"
+                  refX="8"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto"
+                >
+                  <path d="M 0 1.5 L 8.5 5 L 0 8.5 z" fill="#fb7185" />
+                </marker>
               </defs>
 
               {/* Wire from Start Badge to Initial Node */}
@@ -2030,6 +2142,7 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
               {/* Option / Continuation Wires */}
               {wireEdges.map((edge, idx) => {
                 const isHovered = hoveredWireKey === edge.key;
+                const isLoopWire = trappedLoopWireKeys.has(edge.key);
                 const d = computeBezierPath(
                   edge.sx,
                   edge.sy,
@@ -2038,7 +2151,9 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
                   edge.isReturn,
                   idx
                 );
-                const strokeColor = edge.isReturn
+                const strokeColor = isLoopWire
+                  ? '#fb7185'
+                  : edge.isReturn
                   ? '#2dd4bf'
                   : edge.isSelected || isHovered
                   ? '#fde047'
@@ -2046,6 +2161,11 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
 
                 return (
                   <g key={edge.key} style={{ pointerEvents: 'stroke' }}>
+                    {isLoopWire && (
+                      <title>
+                        Aviso de bucle sin salida: ninguna opción de esta rama cierra la conversación.
+                      </title>
+                    )}
                     {/* Wide invisible hit target for easy wire selection */}
                     <path
                       d={d}
@@ -2066,11 +2186,13 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
                       d={d}
                       fill="none"
                       stroke={strokeColor}
-                      strokeWidth={edge.isSelected || isHovered ? 3 : 2}
+                      strokeWidth={edge.isSelected || isHovered || isLoopWire ? 3 : 2}
                       strokeDasharray={edge.isReturn ? '6 4' : undefined}
-                      strokeOpacity={edge.isSelected || isHovered ? 1 : 0.82}
+                      strokeOpacity={edge.isSelected || isHovered || isLoopWire ? 1 : 0.82}
                       markerEnd={
-                        edge.isReturn
+                        isLoopWire
+                          ? 'url(#arrow-loop)'
+                          : edge.isReturn
                           ? 'url(#arrow-return)'
                           : edge.isSelected || isHovered
                           ? 'url(#arrow-forward-active)'
@@ -2138,6 +2260,7 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
               const isSimActive = inspectorTab === 'simulator' && simCurrentNode?.id === node.id && !simEnded;
               const isDropTarget = connectingWire?.moved && hoveredTargetNodeId === node.id;
               const isNpcOnly = node.nodeType === 'npc_only';
+              const isInTrappedLoop = trappedLoopNodeIds.has(node.id);
 
               const speaker =
                 (node.speakerCharacterId
@@ -2168,6 +2291,8 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
                       ? 'border-emerald-400 ring-2 ring-emerald-400/35'
                       : isSelected
                       ? 'border-amber-500 ring-2 ring-amber-500/20'
+                      : isInTrappedLoop
+                      ? 'border-rose-500/75 ring-1 ring-rose-500/30'
                       : 'border-slate-700/80 hover:border-slate-600'
                   }`}
                 >
@@ -2224,15 +2349,25 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
                         <span className="text-xs font-bold text-slate-100 truncate">
                           {node.title || 'Nodo'}
                         </span>
-                        {(isStart || isNpcOnly) && (
-                          <span
-                            className={`text-[10px] font-semibold shrink-0 ${
-                              isNpcOnly ? 'text-sky-300' : 'text-emerald-300'
-                            }`}
-                          >
-                            {isNpcOnly ? 'Réplica' : 'Inicio'}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {isInTrappedLoop && (
+                            <span
+                              title="Bucle sin opción de cierre en esta rama"
+                              className="text-rose-400 flex items-center"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                            </span>
+                          )}
+                          {(isStart || isNpcOnly) && (
+                            <span
+                              className={`text-[10px] font-semibold ${
+                                isNpcOnly ? 'text-sky-300' : 'text-emerald-300'
+                              }`}
+                            >
+                              {isNpcOnly ? 'Réplica' : 'Inicio'}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2449,6 +2584,27 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
             })}
           </div>
 
+          {/* Floating Canvas Warning (Top-Left): Trapped loop without exit */}
+          {trappedLoopNodeIds.size > 0 && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => {
+                const firstId = Array.from(trappedLoopNodeIds)[0];
+                if (firstId) {
+                  setSelectedNodeId(firstId);
+                  setSelectedOptionId(null);
+                  setInspectorTab('properties');
+                }
+              }}
+              title="Añade al menos una opción con «Cerrar charla», «Ir a escena» o «Fin de partida» en esta rama."
+              className="absolute top-3 left-3 z-10 px-3 py-1.5 rounded-lg bg-rose-950/90 hover:bg-rose-900/95 border border-rose-500/50 text-rose-200 text-xs font-semibold flex items-center gap-2 shadow-lg cursor-pointer"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <span>Bucle sin salida: falta una opción que cierre la charla</span>
+            </button>
+          )}
+
           {/* Floating Canvas Controls (Bottom-Left): Legend & Zoom */}
           <div
             onPointerDown={(e) => e.stopPropagation()}
@@ -2504,6 +2660,9 @@ export const DialogueEditor: React.FC<DialogueEditorProps> = ({
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-3 h-0.5 border-t border-dashed border-teal-400 inline-block" /> Retorno
+              </span>
+              <span className="flex items-center gap-1 text-rose-300/90">
+                <span className="w-3 h-0.5 bg-rose-400 inline-block" /> Bucle sin cierre
               </span>
               <span>Arrastra desde un punto derecho para conectar o crear nodo</span>
             </div>
